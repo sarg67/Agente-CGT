@@ -11,7 +11,7 @@ respuestas, (3) deploy en Oracle Cloud (OCI).
 - LangChain para orquestación RAG
 - pypdf para extracción de texto del PDF
 - Interfaz: Streamlit (simple, sin enfocarse en estética)
-- LLM: Cohere (cohere-command-r-plus)
+- LLM: Cohere (command-r-plus-08-2024)
 - Deploy: OCI Compute (VM Always Free tier)
 
 ## Convenciones
@@ -37,3 +37,9 @@ respuestas, (3) deploy en Oracle Cloud (OCI).
 1. Primero que funcione LOCAL, después el deploy
 2. No perder tiempo en interfaz bonita
 3. Mantener el código simple y organizado
+
+## Sobre el usuario
+- No tiene conocimientos de programación
+- Aprobar comandos de pip install, git, python y streamlit siempre es seguro
+- Explicar brevemente qué hace cada comando antes de ejecutarlo
+- Usar lenguaje simple, sin jerga técnica innecesaria
