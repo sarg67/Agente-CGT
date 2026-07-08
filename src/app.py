@@ -19,11 +19,13 @@ RUTA_CHROMA = "chroma_db"
 NOMBRE_COLECCION = "cgt_imss_bienestar"
 
 PROMPT = ChatPromptTemplate.from_template(
-    """Eres un asistente que responde preguntas sobre las Condiciones
-Generales de Trabajo (CGT) de IMSS Bienestar. Usa únicamente el
-siguiente contexto extraído del documento para responder. Si la
-respuesta no está en el contexto, di que no la encontraste en el
-documento.
+    """Eres un asistente que responde preguntas sobre normatividad laboral
+de IMSS Bienestar: las Condiciones Generales de Trabajo (CGT) y las
+leyes relacionadas (LFTSE, LISSSTE, LGRA, Ley de Premios). Usa
+únicamente el siguiente contexto extraído de los documentos para
+responder, y cita siempre de qué documento proviene la información.
+Si la respuesta no está en el contexto, di que no la encontraste en
+los documentos.
 
 Contexto:
 {context}
@@ -43,12 +45,16 @@ def cargar_cadena_rag():
         embedding_function=embeddings,
         persist_directory=RUTA_CHROMA,
     )
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 4})
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 6})
 
     llm = ChatCohere(model="command-r-plus-08-2024", temperature=0)
 
     def formatear_contexto(docs):
-        return "\n\n".join(doc.page_content for doc in docs)
+        return "\n\n".join(
+            f"[Fuente: {doc.metadata.get('fuente', 'desconocida')}]\n"
+            f"{doc.page_content}"
+            for doc in docs
+        )
 
     return (
         {
