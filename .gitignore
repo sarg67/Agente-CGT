@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 documentos/
 chroma_db/
+CLAUDE.md
