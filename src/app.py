@@ -80,8 +80,12 @@ la norma solo habla de más de 6 meses, explica que ese supuesto no
 viene especificado y comparte la regla de los 6 meses. Otro más: "¿de
 cuánto es el bono de puntualidad?" es laboral; si el contexto no trae
 ese bono ni su monto, dilo con honestidad y menciona los estímulos
-que sí establece la normatividad. En estos tres ejemplos está
-PROHIBIDO responder {token_fuera_de_contexto}.
+que sí establece la normatividad. Otro más: "¿puedo trabajar en IMSS
+Bienestar y en otra institución al mismo tiempo?" es laboral
+(compatibilidad de empleos): respóndela con lo que la normatividad
+diga sobre desempeñar dos empleos o incompatibilidades; que mencione
+otra institución junto a IMSS Bienestar no la hace ajena. En estos
+cuatro ejemplos está PROHIBIDO responder {token_fuera_de_contexto}.
 
 Historial de la conversación:
 {historial}
@@ -105,7 +109,10 @@ INSTRUCCION_SIN_CONFIRMAR = (
     "Aún NO se sabe si la persona labora en IMSS Bienestar. Si su "
     "pregunta es laboral y no menciona IMSS Bienestar, no la "
     f'respondas todavía: responde solo esto y nada más: '
-    f'"{PREGUNTA_CONFIRMACION}"'
+    f'"{PREGUNTA_CONFIRMACION}" '
+    "Esto también aplica cuando la persona menciona su profesión u "
+    'oficio sin decir dónde trabaja (ej. "soy enfermera, ¿qué '
+    'prestaciones tengo?"): es laboral, así que pregunta primero.'
 )
 
 
@@ -162,12 +169,17 @@ PATRONES_OTRAS_INSTITUCIONES = [
 ]
 
 
+REGEX_IMSS_BIENESTAR = re.compile(r"imss[\s-]*bienestar", re.IGNORECASE)
+
+
 def menciona_otra_institucion(texto):
+    # Si menciona IMSS Bienestar explícitamente, la pregunta es para
+    # este agente aunque también nombre otras instituciones (ej.
+    # "¿puedo trabajar en IMSS Bienestar e IMSS al mismo tiempo?").
+    if REGEX_IMSS_BIENESTAR.search(texto):
+        return False
     texto = texto.lower()
     return any(re.search(p, texto) for p in PATRONES_OTRAS_INSTITUCIONES)
-
-
-REGEX_IMSS_BIENESTAR = re.compile(r"imss[\s-]*bienestar", re.IGNORECASE)
 REGEX_AFIRMACION = re.compile(
     r"\bs[ií]\b|\bclaro\b|\bas[ií] es\b|\bcorrecto\b|\bafirmativo\b",
     re.IGNORECASE,
