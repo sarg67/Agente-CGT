@@ -4,6 +4,7 @@ Condiciones Generales de Trabajo (CGT) de IMSS Bienestar.
 """
 
 import os
+import re
 from operator import itemgetter
 
 import streamlit as st
@@ -29,65 +30,54 @@ MENSAJE_FUERA_DE_CONTEXTO = (
     "¿Tienes alguna duda sobre tus derechos o prestaciones?"
 )
 
+# Sentinela que el LLM emite cuando no procede responder; el código
+# la detecta y muestra MENSAJE_FUERA_DE_CONTEXTO en su lugar.
+TOKEN_FUERA_DE_CONTEXTO = "FUERA_DE_CONTEXTO"
+
+PREGUNTA_CONFIRMACION = "Con gusto te ayudo. ¿Laboras en IMSS Bienestar?"
+
 PROMPT = ChatPromptTemplate.from_template(
-    """Eres un asistente que responde preguntas sobre normatividad laboral
-de IMSS Bienestar: las Condiciones Generales de Trabajo (CGT) y las
-leyes relacionadas (LFTSE, LISSSTE, LGRA, Ley de Premios). Usa
-únicamente el siguiente contexto extraído de los documentos para
-responder, y cita siempre de qué documento proviene la información.
-Puedes apoyarte en el historial de la conversación para entender
-preguntas de seguimiento.
+    """Eres un asistente que responde preguntas de trabajadores de IMSS
+Bienestar sobre su normatividad laboral: las Condiciones Generales de
+Trabajo (CGT) y las leyes aplicables (LFTSE, LISSSTE, LGRA, Ley de
+Premios). Usa únicamente el siguiente contexto extraído de los
+documentos para responder, y cita siempre de qué documento proviene
+la información. Apóyate en el historial para entender preguntas de
+seguimiento.
 
-Este es el TEXTO DE RECHAZO (cuando aplique, respóndelo EXACTAMENTE,
-sin agregar nada y sin mencionar los documentos ni el contexto):
-"{mensaje_fuera_de_contexto}"
+{instruccion_confirmacion}
 
-Reglas para decidir cómo responder:
-1. RESPONDE SIEMPRE las preguntas laborales (derechos, prestaciones,
-   vacaciones, salario, vales, bonos, aguinaldo, permisos, licencias,
-   pensiones, sanciones, leyes laborales, etc.) de trabajadores de
-   IMSS Bienestar: ya sea que la pregunta lo mencione o que en el
-   historial conste que la persona trabaja ahí. Responde AUNQUE el
-   contexto no contenga el dato exacto: en ese caso dilo con
-   honestidad y comparte lo más cercano que sí establece la
-   normatividad. Las preguntas sobre el marco legal aplicable (CGT,
-   LFTSE, LISSSTE, LGRA, Ley de Premios) son válidas: por ejemplo,
-   las pensiones de estos trabajadores se rigen por la Ley del ISSSTE.
-2. Si la pregunta es laboral pero sobre OTRA institución como
-   empleador (IMSS, PEMEX, SEP, ISSSTE como patrón, empresas
-   privadas, etc.), responde el TEXTO DE RECHAZO. IMPORTANTE: IMSS e
-   IMSS Bienestar son instituciones DISTINTAS; una pregunta sobre
-   trabajar en "el IMSS" o "el Seguro Social" NO aplica para este
-   agente.
-3. Si la pregunta es laboral pero no menciona institución y el
-   historial tampoco aclara dónde trabaja la persona, NO la respondas
-   todavía: pregúntale amablemente si trabaja en IMSS Bienestar (por
-   ejemplo: "Con gusto te ayudo. ¿Trabajas en IMSS Bienestar?").
-   - Si en el historial ya confirmó que SÍ trabaja en IMSS Bienestar,
-     responde sus preguntas directamente sin volver a preguntar.
-   - Si respondió que NO o que trabaja en otra institución, responde
-     el TEXTO DE RECHAZO.
-4. Si la pregunta es claramente ajena al ámbito laboral (deportes,
+Reglas, aplícalas en este orden:
+1. Si la pregunta es claramente ajena al ámbito laboral (deportes,
    cocina, entretenimiento, política, ciencia, temas personales sin
-   relación con el trabajo), responde el TEXTO DE RECHAZO.
+   relación con el trabajo), responde EXACTAMENTE:
+   {token_fuera_de_contexto}
+2. Si el contexto es TOTALMENTE irrelevante al tema de la pregunta,
+   responde EXACTAMENTE: {token_fuera_de_contexto}
+   Usa esta regla solo en ese caso extremo: si el contexto trae
+   información parcial o relacionada (por ejemplo, otras prestaciones
+   cuando preguntan por una prestación que no aparece, o reglas
+   generales de sueldos cuando preguntan un monto), NO la uses:
+   aplica la regla 3.
+3. En cualquier otro caso, responde con la información del contexto
+   citando la fuente. Si el contexto no cubre el detalle exacto (por
+   ejemplo montos o una prestación específica) pero sí temas
+   cercanos, comparte lo más cercano aclarando qué no viene
+   especificado en la normatividad. Si el mensaje del usuario es solo
+   una confirmación (como "sí, laboro ahí"), responde la duda que
+   dejó pendiente en el historial.
 
-Nunca uses el texto de rechazo como saludo o preámbulo de una
-respuesta laboral válida. Y al revés: cuando rechaces, usa siempre
-ese texto exacto, nunca un rechazo con otras palabras.
+Cuando respondas {token_fuera_de_contexto}, responde únicamente esa
+palabra, sin agregar texto, comillas ni explicación. Nunca la uses
+como parte de una respuesta normal.
 
-Ejemplos de cómo aplicar las reglas:
-- "¿Me tocan vales de despensa en IMSS Bienestar?" → Regla 1:
-  respóndela; si los documentos no mencionan vales, dilo y explica
-  las prestaciones que sí establecen.
-- "¿Cuántos días de vacaciones me tocan?" (sin institución, historial
-  sin datos) → Regla 3: pregunta si trabaja en IMSS Bienestar.
-- Usuario dice "sí" después de esa pregunta → Regla 3: ahora responde
-  su duda original apoyándote en el historial.
-- "¿Qué pensión me da el IMSS?" → Regla 2: es otra institución,
-  responde el TEXTO DE RECHAZO.
-- "¿Quién ganó el partido de ayer?" → Regla 4: TEXTO DE RECHAZO.
-- "¿Por quién debería votar?" → Regla 4 (política electoral):
-  TEXTO DE RECHAZO.
+Ejemplo de la diferencia entre las reglas 2 y 3: si preguntan "¿me
+tocan vales de despensa?" y el contexto no menciona vales pero sí
+otras prestaciones (premios, estímulos, aguinaldo), aplica la regla
+3: aclara que los vales no aparecen en la normatividad consultada y
+comparte las prestaciones que sí establece. La regla 2 sería solo si
+el contexto hablara de algo sin ninguna relación (por ejemplo, solo
+de sanciones cuando preguntan por una prestación económica).
 
 Historial de la conversación:
 {historial}
@@ -98,7 +88,21 @@ Contexto:
 Pregunta: {question}
 
 Respuesta:"""
-).partial(mensaje_fuera_de_contexto=MENSAJE_FUERA_DE_CONTEXTO)
+).partial(token_fuera_de_contexto=TOKEN_FUERA_DE_CONTEXTO)
+
+# Instrucción que se inserta en el prompt según el estado (guardado en
+# código, no inferido por el LLM) de si la persona confirmó laborar
+# en IMSS Bienestar.
+INSTRUCCION_CONFIRMADO = (
+    "La persona YA CONFIRMÓ que labora en IMSS Bienestar. Nunca "
+    "preguntes dónde trabaja: responde sus preguntas directamente."
+)
+INSTRUCCION_SIN_CONFIRMAR = (
+    "Aún NO se sabe si la persona labora en IMSS Bienestar. Si su "
+    "pregunta es laboral y no menciona IMSS Bienestar, no la "
+    f'respondas todavía: responde solo esto y nada más: '
+    f'"{PREGUNTA_CONFIRMACION}"'
+)
 
 
 @st.cache_resource
@@ -122,25 +126,73 @@ def cargar_cadena_rag():
         )
 
     def normalizar_fuera_de_contexto(texto):
-        # Garantiza el mensaje exacto cuando el modelo rechaza, sin
-        # descartar respuestas largas que mencionen la frase de paso.
-        limpio = texto.strip().strip('"')
-        es_rechazo = limpio.startswith(
-            "Solo puedo responder preguntas relacionadas"
-        ) and len(limpio) <= len(MENSAJE_FUERA_DE_CONTEXTO) + 60
-        return MENSAJE_FUERA_DE_CONTEXTO if es_rechazo else texto
+        # El LLM emite la sentinela cuando no procede responder; aquí
+        # se convierte en el mensaje de rechazo para el usuario.
+        if TOKEN_FUERA_DE_CONTEXTO in texto:
+            return MENSAJE_FUERA_DE_CONTEXTO
+        return texto
 
     return (
         {
             "context": itemgetter("question") | retriever | formatear_contexto,
             "question": itemgetter("question"),
             "historial": itemgetter("historial"),
+            "instruccion_confirmacion": itemgetter("instruccion_confirmacion"),
         }
         | PROMPT
         | llm
         | StrOutputParser()
         | normalizar_fuera_de_contexto
     )
+
+
+# Filtro previo al retrieval: preguntas sobre otras instituciones se
+# rechazan por palabras clave, sin gastar llamadas a la API. "IMSS"
+# solo cuenta como otra institución si NO va seguido de "Bienestar".
+PATRONES_OTRAS_INSTITUCIONES = [
+    r"\bimss\b(?!\s*[-–]?\s*bienestar)",
+    r"\bseguro\s+social\b",
+    r"\b(pemex|cfe|sedena|semar|sat|sep|infonavit)\b",
+    # ISSSTE solo como empleador (la Ley del ISSSTE sí aplica aquí)
+    r"(trabaj\w+|labor\w+|emplead\w+)\s+(en|de|del|para)\s+(el\s+)?issste\b",
+]
+
+
+def menciona_otra_institucion(texto):
+    texto = texto.lower()
+    return any(re.search(p, texto) for p in PATRONES_OTRAS_INSTITUCIONES)
+
+
+REGEX_IMSS_BIENESTAR = re.compile(r"imss[\s-]*bienestar", re.IGNORECASE)
+REGEX_AFIRMACION = re.compile(
+    r"\bs[ií]\b|\bclaro\b|\bas[ií] es\b|\bcorrecto\b|\bafirmativo\b",
+    re.IGNORECASE,
+)
+REGEX_NEGACION = re.compile(r"\bno\b", re.IGNORECASE)
+
+
+def actualizar_confirmacion(pregunta):
+    """Actualiza en session_state si la persona labora en IMSS Bienestar.
+
+    El estado vive en código (no lo infiere el LLM): se confirma si la
+    pregunta menciona IMSS Bienestar, o por un sí/no cuando el mensaje
+    anterior del asistente fue la pregunta de confirmación.
+    """
+    if REGEX_IMSS_BIENESTAR.search(pregunta):
+        st.session_state.confirmado = True
+        return
+
+    mensajes = st.session_state.mensajes
+    respondiendo_confirmacion = (
+        mensajes
+        and mensajes[-1]["rol"] == "assistant"
+        and mensajes[-1]["contenido"] == PREGUNTA_CONFIRMACION
+    )
+    if respondiendo_confirmacion:
+        if REGEX_NEGACION.search(pregunta):
+            st.session_state.confirmado = False
+        elif REGEX_AFIRMACION.search(pregunta):
+            st.session_state.confirmado = True
 
 
 # Máximo de mensajes previos que se incluyen en el prompt, para no
@@ -181,9 +233,11 @@ HISTORIAL_INICIAL = [{"rol": "assistant", "contenido": MENSAJE_BIENVENIDA}]
 
 if "mensajes" not in st.session_state:
     st.session_state.mensajes = list(HISTORIAL_INICIAL)
+    st.session_state.confirmado = None
 
 if st.button("Nueva conversación"):
     st.session_state.mensajes = list(HISTORIAL_INICIAL)
+    st.session_state.confirmado = None
 
 for mensaje in st.session_state.mensajes:
     with st.chat_message(mensaje["rol"]):
@@ -195,14 +249,24 @@ pregunta = st.chat_input("Escribe tu pregunta...")
 if pregunta:
     with st.chat_message("user"):
         st.write(pregunta)
-    with st.spinner("Buscando respuesta..."):
-        cadena = cargar_cadena_rag()
-        respuesta = cadena.invoke(
-            {
-                "question": pregunta,
-                "historial": formatear_historial(st.session_state.mensajes),
-            }
-        )
+    actualizar_confirmacion(pregunta)
+    if menciona_otra_institucion(pregunta) or st.session_state.confirmado is False:
+        respuesta = MENSAJE_FUERA_DE_CONTEXTO
+    else:
+        with st.spinner("Buscando respuesta..."):
+            cadena = cargar_cadena_rag()
+            instruccion = (
+                INSTRUCCION_CONFIRMADO
+                if st.session_state.confirmado
+                else INSTRUCCION_SIN_CONFIRMAR
+            )
+            respuesta = cadena.invoke(
+                {
+                    "question": pregunta,
+                    "historial": formatear_historial(st.session_state.mensajes),
+                    "instruccion_confirmacion": instruccion,
+                }
+            )
     st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
     st.session_state.mensajes.append({"rol": "assistant", "contenido": respuesta})
     st.rerun()
