@@ -38,12 +38,37 @@ responder, y cita siempre de qué documento proviene la información.
 Puedes apoyarte en el historial de la conversación para entender
 preguntas de seguimiento.
 
-Si el contexto y el historial no contienen información relevante para
-responder la pregunta, o la pregunta no trata sobre condiciones
-laborales o el marco normativo de los trabajadores, responde
-EXACTAMENTE con este texto y nada más (sin mencionar los documentos,
-el contexto ni lo que encontraste):
+Reglas para decidir si respondes:
+1. Si la pregunta trata de temas laborales en sentido amplio (trabajo,
+   derechos, prestaciones, vacaciones, salario, vales, bonos,
+   aguinaldo, estímulos, permisos, licencias, pensiones, sanciones,
+   leyes laborales, etc.), SIEMPRE respóndela, AUNQUE el contexto no
+   contenga la respuesta exacta. Si el contexto no cubre el detalle
+   (por ejemplo montos, fechas o una prestación específica), dilo con
+   honestidad y comparte lo más cercano que sí establece la
+   normatividad. En caso de duda, asume que la pregunta es laboral.
+2. SOLO si la pregunta es claramente ajena al ámbito laboral (por
+   ejemplo: deportes, cocina, entretenimiento, política, ciencia,
+   temas personales sin relación con el trabajo), responde EXACTAMENTE
+   con este texto y nada más (sin mencionar los documentos, el
+   contexto ni lo que encontraste):
 "{mensaje_fuera_de_contexto}"
+
+Nunca uses el texto de la regla 2 como saludo o preámbulo de una
+respuesta laboral: resérvalo únicamente para preguntas ajenas. Y al
+revés: cuando rechaces una pregunta ajena, usa siempre ese texto
+exacto, nunca un rechazo con otras palabras.
+
+Ejemplos de cómo aplicar las reglas:
+- "¿Me corresponden vales de despensa?" → Es laboral (prestaciones):
+  respóndela. Si los documentos no mencionan vales de despensa,
+  dilo y explica las prestaciones económicas que sí establecen.
+- "¿Cuánto gana una enfermera?" → Es laboral (salario): respóndela
+  con lo que digan los documentos sobre sueldos, aunque no haya cifras.
+- "¿Quién ganó el partido de ayer?" → Es ajena: responde el texto
+  exacto de la regla 2.
+- "¿Por quién debería votar?" → Es ajena (política electoral, aunque
+  exista el voto sindical): responde el texto exacto de la regla 2.
 
 Historial de la conversación:
 {historial}
@@ -78,11 +103,13 @@ def cargar_cadena_rag():
         )
 
     def normalizar_fuera_de_contexto(texto):
-        # Garantiza el mensaje exacto aunque el modelo agregue comillas
-        # o alguna palabra alrededor.
-        if "Solo puedo responder preguntas relacionadas" in texto:
-            return MENSAJE_FUERA_DE_CONTEXTO
-        return texto
+        # Garantiza el mensaje exacto cuando el modelo rechaza, sin
+        # descartar respuestas largas que mencionen la frase de paso.
+        limpio = texto.strip().strip('"')
+        es_rechazo = limpio.startswith(
+            "Solo puedo responder preguntas relacionadas"
+        ) and len(limpio) <= len(MENSAJE_FUERA_DE_CONTEXTO) + 60
+        return MENSAJE_FUERA_DE_CONTEXTO if es_rechazo else texto
 
     return (
         {
@@ -129,15 +156,15 @@ if not os.path.isdir(RUTA_CHROMA):
     )
     st.stop()
 
+# La bienvenida vive como primer mensaje del historial: así siempre
+# se muestra al iniciar y "Nueva conversación" la restaura.
+HISTORIAL_INICIAL = [{"rol": "assistant", "contenido": MENSAJE_BIENVENIDA}]
+
 if "mensajes" not in st.session_state:
-    st.session_state.mensajes = []
+    st.session_state.mensajes = list(HISTORIAL_INICIAL)
 
 if st.button("Nueva conversación"):
-    st.session_state.mensajes = []
-
-if not st.session_state.mensajes:
-    with st.chat_message("assistant"):
-        st.write(MENSAJE_BIENVENIDA)
+    st.session_state.mensajes = list(HISTORIAL_INICIAL)
 
 for mensaje in st.session_state.mensajes:
     with st.chat_message(mensaje["rol"]):
