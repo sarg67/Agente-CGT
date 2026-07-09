@@ -2,6 +2,5 @@ venv/
 .env
 __pycache__/
 *.pyc
-documentos/CGT_IMSS_BIENESTAR.pdf
 chroma_db/
 CLAUDE.md
