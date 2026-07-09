@@ -143,9 +143,12 @@ for mensaje in st.session_state.mensajes:
     with st.chat_message(mensaje["rol"]):
         st.write(mensaje["contenido"])
 
-pregunta = st.text_input("Escribe tu pregunta:")
+# st.chat_input envía la pregunta al presionar Enter
+pregunta = st.chat_input("Escribe tu pregunta...")
 
-if st.button("Preguntar") and pregunta:
+if pregunta:
+    with st.chat_message("user"):
+        st.write(pregunta)
     with st.spinner("Buscando respuesta..."):
         cadena = cargar_cadena_rag()
         respuesta = cadena.invoke(
