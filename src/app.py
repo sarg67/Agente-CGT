@@ -18,6 +18,11 @@ load_dotenv()
 RUTA_CHROMA = "chroma_db"
 NOMBRE_COLECCION = "cgt_imss_bienestar"
 
+MENSAJE_BIENVENIDA = (
+    "Hola, soy el Asistente Laboral de IMSS Bienestar. "
+    "¿En qué te puedo ayudar?"
+)
+
 MENSAJE_FUERA_DE_CONTEXTO = (
     "Solo puedo responder preguntas relacionadas con las condiciones "
     "laborales y el marco normativo de los trabajadores de IMSS Bienestar. "
@@ -102,6 +107,9 @@ if not os.path.isdir(RUTA_CHROMA):
         "Corre primero: python src/ingestor.py"
     )
     st.stop()
+
+with st.chat_message("assistant"):
+    st.write(MENSAJE_BIENVENIDA)
 
 pregunta = st.text_input("Escribe tu pregunta:")
 
