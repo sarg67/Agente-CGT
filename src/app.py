@@ -4,6 +4,7 @@ Condiciones Generales de Trabajo (CGT) de IMSS Bienestar.
 """
 
 import os
+from operator import itemgetter
 
 import streamlit as st
 from dotenv import load_dotenv
@@ -11,7 +12,6 @@ from langchain_chroma import Chroma
 from langchain_cohere import ChatCohere, CohereEmbeddings
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnablePassthrough
 
 load_dotenv()
 
@@ -35,13 +35,18 @@ de IMSS Bienestar: las Condiciones Generales de Trabajo (CGT) y las
 leyes relacionadas (LFTSE, LISSSTE, LGRA, Ley de Premios). Usa
 únicamente el siguiente contexto extraído de los documentos para
 responder, y cita siempre de qué documento proviene la información.
+Puedes apoyarte en el historial de la conversación para entender
+preguntas de seguimiento.
 
-Si el contexto no contiene información relevante para responder la
-pregunta, o la pregunta no trata sobre condiciones laborales o el
-marco normativo de los trabajadores, responde EXACTAMENTE con este
-texto y nada más (sin mencionar los documentos, el contexto ni lo
-que encontraste):
+Si el contexto y el historial no contienen información relevante para
+responder la pregunta, o la pregunta no trata sobre condiciones
+laborales o el marco normativo de los trabajadores, responde
+EXACTAMENTE con este texto y nada más (sin mencionar los documentos,
+el contexto ni lo que encontraste):
 "{mensaje_fuera_de_contexto}"
+
+Historial de la conversación:
+{historial}
 
 Contexto:
 {context}
@@ -81,14 +86,30 @@ def cargar_cadena_rag():
 
     return (
         {
-            "context": retriever | formatear_contexto,
-            "question": RunnablePassthrough(),
+            "context": itemgetter("question") | retriever | formatear_contexto,
+            "question": itemgetter("question"),
+            "historial": itemgetter("historial"),
         }
         | PROMPT
         | llm
         | StrOutputParser()
         | normalizar_fuera_de_contexto
     )
+
+
+# Máximo de mensajes previos que se incluyen en el prompt, para no
+# exceder los límites de tokens de la API.
+MAX_MENSAJES_HISTORIAL = 8
+
+
+def formatear_historial(mensajes):
+    if not mensajes:
+        return "(la conversación apenas comienza)"
+    lineas = []
+    for m in mensajes[-MAX_MENSAJES_HISTORIAL:]:
+        rol = "Usuario" if m["rol"] == "user" else "Asistente"
+        lineas.append(f"{rol}: {m['contenido']}")
+    return "\n".join(lineas)
 
 
 st.set_page_config(page_title="Agente CGT - IMSS Bienestar")
@@ -108,14 +129,31 @@ if not os.path.isdir(RUTA_CHROMA):
     )
     st.stop()
 
-with st.chat_message("assistant"):
-    st.write(MENSAJE_BIENVENIDA)
+if "mensajes" not in st.session_state:
+    st.session_state.mensajes = []
+
+if st.button("Nueva conversación"):
+    st.session_state.mensajes = []
+
+if not st.session_state.mensajes:
+    with st.chat_message("assistant"):
+        st.write(MENSAJE_BIENVENIDA)
+
+for mensaje in st.session_state.mensajes:
+    with st.chat_message(mensaje["rol"]):
+        st.write(mensaje["contenido"])
 
 pregunta = st.text_input("Escribe tu pregunta:")
 
 if st.button("Preguntar") and pregunta:
     with st.spinner("Buscando respuesta..."):
         cadena = cargar_cadena_rag()
-        respuesta = cadena.invoke(pregunta)
-    st.markdown("### Respuesta")
-    st.write(respuesta)
+        respuesta = cadena.invoke(
+            {
+                "question": pregunta,
+                "historial": formatear_historial(st.session_state.mensajes),
+            }
+        )
+    st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
+    st.session_state.mensajes.append({"rol": "assistant", "contenido": respuesta})
+    st.rerun()
