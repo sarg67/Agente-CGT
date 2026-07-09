@@ -234,10 +234,12 @@ HISTORIAL_INICIAL = [{"rol": "assistant", "contenido": MENSAJE_BIENVENIDA}]
 if "mensajes" not in st.session_state:
     st.session_state.mensajes = list(HISTORIAL_INICIAL)
     st.session_state.confirmado = None
+    st.session_state.pregunta_pendiente = None
 
 if st.button("Nueva conversación"):
     st.session_state.mensajes = list(HISTORIAL_INICIAL)
     st.session_state.confirmado = None
+    st.session_state.pregunta_pendiente = None
 
 for mensaje in st.session_state.mensajes:
     with st.chat_message(mensaje["rol"]):
@@ -249,7 +251,22 @@ pregunta = st.chat_input("Escribe tu pregunta...")
 if pregunta:
     with st.chat_message("user"):
         st.write(pregunta)
+
+    # ¿Este mensaje responde a la pregunta "¿Laboras en IMSS Bienestar?"?
+    era_respuesta_confirmacion = (
+        st.session_state.mensajes
+        and st.session_state.mensajes[-1]["rol"] == "assistant"
+        and st.session_state.mensajes[-1]["contenido"] == PREGUNTA_CONFIRMACION
+    )
     actualizar_confirmacion(pregunta)
+
+    # La pregunta pendiente solo se responde si la persona acaba de
+    # confirmar; en cualquier otro caso queda obsoleta y se descarta.
+    pendiente = None
+    if era_respuesta_confirmacion and st.session_state.confirmado:
+        pendiente = st.session_state.pregunta_pendiente
+    st.session_state.pregunta_pendiente = None
+
     if menciona_otra_institucion(pregunta) or st.session_state.confirmado is False:
         respuesta = MENSAJE_FUERA_DE_CONTEXTO
     else:
@@ -262,11 +279,16 @@ if pregunta:
             )
             respuesta = cadena.invoke(
                 {
-                    "question": pregunta,
+                    # Tras confirmar, se responde la pregunta original
+                    # sin pedirle a la persona que la repita.
+                    "question": pendiente or pregunta,
                     "historial": formatear_historial(st.session_state.mensajes),
                     "instruccion_confirmacion": instruccion,
                 }
             )
+        if respuesta == PREGUNTA_CONFIRMACION:
+            st.session_state.pregunta_pendiente = pregunta
+
     st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
     st.session_state.mensajes.append({"rol": "assistant", "contenido": respuesta})
     st.rerun()
