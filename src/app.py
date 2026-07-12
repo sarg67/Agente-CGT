@@ -3,8 +3,10 @@ Interfaz Streamlit del agente de preguntas y respuestas sobre las
 Condiciones Generales de Trabajo (CGT) de IMSS Bienestar.
 """
 
+import json
 import os
 import re
+from datetime import datetime
 from operator import itemgetter
 
 import streamlit as st
@@ -20,7 +22,9 @@ RUTA_CHROMA = "chroma_db"
 NOMBRE_COLECCION = "cgt_imss_bienestar"
 
 MENSAJE_BIENVENIDA = (
-    "Hola, soy el Asistente Laboral de IMSS Bienestar. "
+    "Hola, soy el Asistente Laboral de IMSS Bienestar, un agente de "
+    "inteligencia artificial (no una persona). Respondo con base en "
+    "las Condiciones Generales de Trabajo y su marco normativo. "
     "¿En qué te puedo ayudar?"
 )
 
@@ -257,9 +261,36 @@ if st.button("Nueva conversación"):
     st.session_state.confirmado = None
     st.session_state.pregunta_pendiente = None
 
-for mensaje in st.session_state.mensajes:
+ARCHIVO_FEEDBACK = "feedback.jsonl"
+
+
+def registrar_feedback(indice):
+    """Guarda el voto (👍/👎) junto con la pregunta y la respuesta."""
+    voto = st.session_state.get(f"feedback_{indice}")
+    if voto is None:
+        return
+    mensajes = st.session_state.mensajes
+    registro = {
+        "fecha": datetime.now().isoformat(timespec="seconds"),
+        "pregunta": mensajes[indice - 1]["contenido"] if indice > 0 else "",
+        "respuesta": mensajes[indice]["contenido"],
+        "voto": "positivo" if voto == 1 else "negativo",
+    }
+    with open(ARCHIVO_FEEDBACK, "a", encoding="utf-8") as f:
+        f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+
+
+for i, mensaje in enumerate(st.session_state.mensajes):
     with st.chat_message(mensaje["rol"]):
         st.write(mensaje["contenido"])
+        # Botones 👍/👎 en cada respuesta del agente (no en la bienvenida)
+        if mensaje["rol"] == "assistant" and i > 0:
+            st.feedback(
+                "thumbs",
+                key=f"feedback_{i}",
+                on_change=registrar_feedback,
+                args=(i,),
+            )
 
 # st.chat_input envía la pregunta al presionar Enter
 pregunta = st.chat_input("Escribe tu pregunta...")
