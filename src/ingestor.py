@@ -4,6 +4,8 @@ Lee todos los PDFs de la carpeta documentos/, los divide en chunks
 almacena en una base vectorial ChromaDB local persistente.
 """
 
+import hashlib
+import json
 import os
 import shutil
 import time
@@ -20,6 +22,35 @@ load_dotenv()
 RUTA_DOCUMENTOS = "documentos"
 RUTA_CHROMA = "chroma_db"
 NOMBRE_COLECCION = "cgt_imss_bienestar"
+
+# Manifiesto con la huella (hash) de cada PDF ingestado. Permite
+# detectar si los documentos cambiaron desde la última ingesta y
+# evitar reprocesar (y gastar API) cuando no hay cambios.
+RUTA_MANIFIESTO = "manifiesto_ingesta.json"
+
+
+def calcular_hashes(ruta_documentos: str):
+    """Devuelve {nombre_de_archivo: hash} de los PDFs de la carpeta."""
+    hashes = {}
+    for ruta_pdf in sorted(Path(ruta_documentos).glob("*.pdf")):
+        hashes[ruta_pdf.name] = hashlib.sha256(
+            ruta_pdf.read_bytes()
+        ).hexdigest()
+    return hashes
+
+
+def documentos_sin_cambios(hashes_actuales: dict) -> bool:
+    """True si la base existe y los PDFs son idénticos a los ingestados."""
+    if not os.path.isdir(RUTA_CHROMA) or not os.path.exists(RUTA_MANIFIESTO):
+        return False
+    with open(RUTA_MANIFIESTO, encoding="utf-8") as f:
+        hashes_previos = json.load(f)
+    return hashes_previos == hashes_actuales
+
+
+def guardar_manifiesto(hashes: dict):
+    with open(RUTA_MANIFIESTO, "w", encoding="utf-8") as f:
+        json.dump(hashes, f, indent=2, ensure_ascii=False)
 
 # Nombre legible de cada documento, usado como fuente al citar.
 # Si un PDF no está aquí, se usa el nombre del archivo sin extensión.
@@ -93,6 +124,17 @@ def main():
             "Falta COHERE_API_KEY. Define la variable en tu archivo .env."
         )
 
+    hashes = calcular_hashes(RUTA_DOCUMENTOS)
+    if not hashes:
+        raise RuntimeError(f"No se encontraron PDFs en '{RUTA_DOCUMENTOS}'.")
+
+    if documentos_sin_cambios(hashes):
+        print(
+            "Los documentos no han cambiado desde la última ingesta: "
+            "la base vectorial ya está al día."
+        )
+        return
+
     chunks_por_fuente = cargar_y_dividir_pdfs(RUTA_DOCUMENTOS)
 
     print("\nChunks generados por documento:")
@@ -110,6 +152,7 @@ def main():
 
     print(f"Generando embeddings y guardando en ChromaDB ({RUTA_CHROMA})...")
     construir_base_vectorial(todos, RUTA_CHROMA)
+    guardar_manifiesto(hashes)
     print("Base vectorial creada correctamente.")
 
 

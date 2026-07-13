@@ -125,6 +125,23 @@ Abre `http://localhost:8501` en el navegador y pregunta.
 llamadas por minuto y por mes; el ingestor ya lo maneja procesando
 por lotes con pausas.
 
+## Mantenimiento: actualizar los documentos
+
+Cuando un PDF se agregue, cambie o elimine en `documentos/`, basta con
+correr de nuevo:
+
+```bash
+python src/ingestor.py
+```
+
+El ingestor detecta automáticamente si los documentos cambiaron
+(compara su huella digital contra la última ingesta registrada en
+`manifiesto_ingesta.json`): si no hay cambios termina en segundos sin
+consumir API, y si los hay, reconstruye la base vectorial completa
+sin duplicados. Para automatizarlo como rutina periódica, se puede
+programar ese comando con `cron` en el servidor (ver sección de
+deploy).
+
 ## Deploy en OCI
 
 *(Pendiente: captura de pantalla y URL del deploy en Oracle Cloud
