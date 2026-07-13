@@ -5,6 +5,7 @@ almacena en una base vectorial ChromaDB local persistente.
 """
 
 import os
+import shutil
 import time
 from pathlib import Path
 
@@ -100,6 +101,12 @@ def main():
 
     todos = [c for chunks in chunks_por_fuente.values() for c in chunks]
     print(f"\nTotal: {len(todos)} chunks.")
+
+    # Borrar la base anterior evita fragmentos duplicados: así el
+    # ingestor puede re-ejecutarse con seguridad cuando cambien los PDFs.
+    if os.path.isdir(RUTA_CHROMA):
+        print(f"Eliminando base vectorial anterior ({RUTA_CHROMA})...")
+        shutil.rmtree(RUTA_CHROMA)
 
     print(f"Generando embeddings y guardando en ChromaDB ({RUTA_CHROMA})...")
     construir_base_vectorial(todos, RUTA_CHROMA)

@@ -262,6 +262,19 @@ if st.button("Nueva conversación"):
     st.session_state.pregunta_pendiente = None
 
 ARCHIVO_FEEDBACK = "feedback.jsonl"
+ARCHIVO_RECHAZOS = "rechazos.jsonl"
+
+
+def registrar_rechazo(pregunta, motivo):
+    """Registra las preguntas rechazadas por el safeguard, para el
+    monitoreo de calidad (detectar vacíos en la base de documentos)."""
+    registro = {
+        "fecha": datetime.now().isoformat(timespec="seconds"),
+        "pregunta": pregunta,
+        "motivo": motivo,
+    }
+    with open(ARCHIVO_RECHAZOS, "a", encoding="utf-8") as f:
+        f.write(json.dumps(registro, ensure_ascii=False) + "\n")
 
 
 def registrar_feedback(indice):
@@ -314,8 +327,12 @@ if pregunta:
         pendiente = st.session_state.pregunta_pendiente
     st.session_state.pregunta_pendiente = None
 
-    if menciona_otra_institucion(pregunta) or st.session_state.confirmado is False:
+    if menciona_otra_institucion(pregunta):
         respuesta = MENSAJE_FUERA_DE_CONTEXTO
+        registrar_rechazo(pregunta, "menciona otra institución")
+    elif st.session_state.confirmado is False:
+        respuesta = MENSAJE_FUERA_DE_CONTEXTO
+        registrar_rechazo(pregunta, "no labora en IMSS Bienestar")
     else:
         with st.spinner("Buscando respuesta..."):
             cadena = cargar_cadena_rag()
@@ -335,6 +352,8 @@ if pregunta:
             )
         if respuesta == PREGUNTA_CONFIRMACION:
             st.session_state.pregunta_pendiente = pregunta
+        elif respuesta == MENSAJE_FUERA_DE_CONTEXTO:
+            registrar_rechazo(pregunta, "tema ajeno al ámbito laboral")
 
     st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
     st.session_state.mensajes.append({"rol": "assistant", "contenido": respuesta})
