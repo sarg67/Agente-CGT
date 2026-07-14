@@ -6,6 +6,7 @@ Condiciones Generales de Trabajo (CGT) de IMSS Bienestar.
 import json
 import os
 import re
+import time
 from datetime import datetime
 from operator import itemgetter
 
@@ -261,43 +262,68 @@ if st.button("Nueva conversación"):
     st.session_state.confirmado = None
     st.session_state.pregunta_pendiente = None
 
-ARCHIVO_FEEDBACK = "feedback.jsonl"
-ARCHIVO_RECHAZOS = "rechazos.jsonl"
+# Registro unificado de métricas de uso. Cada pregunta genera una línea
+# JSON; el voto 👍/👎 actualiza esa misma línea (por su id).
+ARCHIVO_METRICAS = "logs/metricas.jsonl"
 
 
-def registrar_rechazo(pregunta, motivo):
-    """Registra las preguntas rechazadas por el safeguard, para el
-    monitoreo de calidad (detectar vacíos en la base de documentos)."""
+def registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta):
+    """Escribe una línea en metricas.jsonl y devuelve su id, para que el
+    voto posterior pueda actualizar ese mismo registro."""
+    st.session_state.metrica_contador = (
+        st.session_state.get("metrica_contador", 0) + 1
+    )
+    metrica_id = (
+        f"{datetime.now():%Y%m%d%H%M%S%f}-{st.session_state.metrica_contador}"
+    )
     registro = {
-        "fecha": datetime.now().isoformat(timespec="seconds"),
+        "id": metrica_id,
+        "timestamp": datetime.now().isoformat(timespec="seconds"),
         "pregunta": pregunta,
-        "motivo": motivo,
+        "tipo_respuesta": tipo_respuesta,  # respondida / safeguard / verificacion
+        "tiempo_respuesta": round(tiempo_respuesta, 3),
+        "calificacion": None,  # se llena con el voto 👍/👎
     }
-    with open(ARCHIVO_RECHAZOS, "a", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(ARCHIVO_METRICAS), exist_ok=True)
+    with open(ARCHIVO_METRICAS, "a", encoding="utf-8") as f:
         f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    return metrica_id
+
+
+def actualizar_calificacion(metrica_id, calificacion):
+    """Reescribe metricas.jsonl para fijar la calificación del registro."""
+    if not os.path.exists(ARCHIVO_METRICAS):
+        return
+    registros = []
+    with open(ARCHIVO_METRICAS, encoding="utf-8") as f:
+        for linea in f:
+            if not linea.strip():
+                continue
+            reg = json.loads(linea)
+            if reg.get("id") == metrica_id:
+                reg["calificacion"] = calificacion
+            registros.append(reg)
+    with open(ARCHIVO_METRICAS, "w", encoding="utf-8") as f:
+        for reg in registros:
+            f.write(json.dumps(reg, ensure_ascii=False) + "\n")
 
 
 def registrar_feedback(indice):
-    """Guarda el voto (👍/👎) junto con la pregunta y la respuesta."""
+    """Traduce el voto 👍/👎 y lo guarda en el registro de métricas."""
     voto = st.session_state.get(f"feedback_{indice}")
     if voto is None:
         return
-    mensajes = st.session_state.mensajes
-    registro = {
-        "fecha": datetime.now().isoformat(timespec="seconds"),
-        "pregunta": mensajes[indice - 1]["contenido"] if indice > 0 else "",
-        "respuesta": mensajes[indice]["contenido"],
-        "voto": "positivo" if voto == 1 else "negativo",
-    }
-    with open(ARCHIVO_FEEDBACK, "a", encoding="utf-8") as f:
-        f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    metrica_id = st.session_state.mensajes[indice].get("metrica_id")
+    if metrica_id:
+        actualizar_calificacion(metrica_id, "positivo" if voto == 1 else "negativo")
 
 
 for i, mensaje in enumerate(st.session_state.mensajes):
     with st.chat_message(mensaje["rol"]):
         st.write(mensaje["contenido"])
-        # Botones 👍/👎 en cada respuesta del agente (no en la bienvenida)
-        if mensaje["rol"] == "assistant" and i > 0:
+        # Botones 👍/👎 en cada respuesta del agente que tenga métrica
+        # asociada (excluye la bienvenida inicial).
+        if mensaje["rol"] == "assistant" and mensaje.get("metrica_id"):
             st.feedback(
                 "thumbs",
                 key=f"feedback_{i}",
@@ -327,12 +353,11 @@ if pregunta:
         pendiente = st.session_state.pregunta_pendiente
     st.session_state.pregunta_pendiente = None
 
+    inicio = time.perf_counter()
     if menciona_otra_institucion(pregunta):
         respuesta = MENSAJE_FUERA_DE_CONTEXTO
-        registrar_rechazo(pregunta, "menciona otra institución")
     elif st.session_state.confirmado is False:
         respuesta = MENSAJE_FUERA_DE_CONTEXTO
-        registrar_rechazo(pregunta, "no labora en IMSS Bienestar")
     else:
         with st.spinner("Buscando respuesta..."):
             cadena = cargar_cadena_rag()
@@ -352,9 +377,19 @@ if pregunta:
             )
         if respuesta == PREGUNTA_CONFIRMACION:
             st.session_state.pregunta_pendiente = pregunta
-        elif respuesta == MENSAJE_FUERA_DE_CONTEXTO:
-            registrar_rechazo(pregunta, "tema ajeno al ámbito laboral")
+    tiempo_respuesta = time.perf_counter() - inicio
+
+    # Clasificar el tipo de respuesta para el monitoreo de calidad.
+    if respuesta == MENSAJE_FUERA_DE_CONTEXTO:
+        tipo_respuesta = "safeguard"
+    elif respuesta == PREGUNTA_CONFIRMACION:
+        tipo_respuesta = "verificacion"
+    else:
+        tipo_respuesta = "respondida"
+    metrica_id = registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta)
 
     st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
-    st.session_state.mensajes.append({"rol": "assistant", "contenido": respuesta})
+    st.session_state.mensajes.append(
+        {"rol": "assistant", "contenido": respuesta, "metrica_id": metrica_id}
+    )
     st.rerun()
