@@ -1,0 +1,33 @@
+ANÁLISIS DE VACÍOS (GAPS) EN LA BASE DE CONOCIMIENTO
+=======================================================
+Fecha: 2026-07-13 21:03:13
+Preguntas bloqueadas analizadas: 6
+
+1. PREGUNTAS SIN RESPUESTA MÁS FRECUENTES
+   [1x] ¿Qué pensión me da el IMSS?
+   [1x] ¿Cuánto pagan en PEMEX?
+   [1x] ¿Quién ganó el mundial de 2022?
+   [1x] ¿Cuál es la receta de la carne asada?
+   [1x] ¿Qué prestaciones da el Seguro Social?
+   [1x] ¿Cómo tramito mi jubilación con el IMSS?
+
+2. AGRUPADAS POR TEMA
+   == pensiones == (2 pregunta(s))
+      [1x] ¿Qué pensión me da el IMSS?
+      [1x] ¿Cómo tramito mi jubilación con el IMSS?
+      Sugerencia de documento: Guía del régimen de pensiones y seguridad social aplicable a trabajadores de IMSS Bienestar.
+
+   == salario y prestaciones == (2 pregunta(s))
+      [1x] ¿Cuánto pagan en PEMEX?
+      [1x] ¿Qué prestaciones da el Seguro Social?
+      Sugerencia de documento: Tabulador de sueldos y catálogo de prestaciones económicas.
+
+   == otros / sin tema laboral claro == (2 pregunta(s))
+      [1x] ¿Quién ganó el mundial de 2022?
+      [1x] ¿Cuál es la receta de la carne asada?
+      Sugerencia de documento: Revisar manualmente. Suelen ser preguntas sobre otras instituciones (IMSS, PEMEX, etc.) o temas ajenos al ámbito laboral: en esos casos el bloqueo es correcto y NO representa un vacío en la base.
+
+NOTA: no todo bloqueo es un vacío real. Las preguntas sobre
+otras instituciones o temas ajenos se bloquean a propósito.
+Un tema laboral con muchas preguntas sí sugiere agregar un
+documento a la base.
