@@ -7,3 +7,4 @@ CLAUDE.md
 feedback.jsonl
 rechazos.jsonl
 manifiesto_ingesta.json
+tests/
