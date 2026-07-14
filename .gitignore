@@ -8,3 +8,9 @@ feedback.jsonl
 rechazos.jsonl
 manifiesto_ingesta.json
 tests/
+
+# Logs de operación: los .jsonl y reportes regenerables NO se suben,
+# pero sí la documentación del sistema (curaduría y gaps detectados).
+logs/*.jsonl
+logs/metricas*
+logs/evaluacion*
