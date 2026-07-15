@@ -83,8 +83,10 @@ def cargar_y_dividir_pdfs(ruta_documentos: str):
 
         paginas = PyPDFLoader(str(ruta_pdf)).load()
         chunks = splitter.split_documents(paginas)
+        mtime = ruta_pdf.stat().st_mtime
         for chunk in chunks:
             chunk.metadata["fuente"] = fuente
+            chunk.metadata["mtime_archivo"] = mtime
 
         chunks_por_fuente[fuente] = chunks
 

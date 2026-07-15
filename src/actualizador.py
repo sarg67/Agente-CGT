@@ -119,14 +119,35 @@ def ruta_documento(archivo):
 
 
 def cargar_chunks(archivo):
-    """Carga un PDF y devuelve sus chunks con el metadato de fuente."""
+    """Carga un PDF y devuelve sus chunks con fuente y fecha del archivo."""
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
     paginas = PyPDFLoader(ruta_documento(archivo)).load()
     chunks = splitter.split_documents(paginas)
     fuente = NOMBRES_FUENTES.get(Path(archivo).stem, Path(archivo).stem)
+    mtime = Path(ruta_documento(archivo)).stat().st_mtime
     for chunk in chunks:
         chunk.metadata["fuente"] = fuente
+        chunk.metadata["mtime_archivo"] = mtime
     return chunks
+
+
+def refrescar_metadata_fecha(coleccion, archivo, mtime):
+    """Actualiza mtime_archivo en los chunks del documento SIN recalcular
+    embeddings (el contenido es idéntico, solo cambió la fecha). Devuelve
+    cuántos fragmentos se actualizaron."""
+    datos = coleccion.get(
+        where={"source": ruta_documento(archivo)}, include=["metadatas"]
+    )
+    ids = datos["ids"]
+    if not ids:
+        return 0
+    metadatas = []
+    for meta in datos["metadatas"]:
+        nueva = dict(meta)
+        nueva["mtime_archivo"] = mtime
+        metadatas.append(nueva)
+    coleccion.update(ids=ids, metadatas=metadatas)
+    return len(ids)
 
 
 def agregar_por_lotes(vectorstore, chunks):
@@ -149,14 +170,18 @@ def abrir_base():
     )
 
 
-def aplicar_cambios(nuevos, modificados, eliminados):
+def aplicar_cambios(nuevos, modificados, eliminados, modificados_fecha):
     """Actualiza en ChromaDB solo los documentos afectados.
 
-    Un PDF corrupto o vacío no debe tumbar toda la ejecución: cada
-    documento se procesa con manejo de errores. Devuelve (acciones,
-    fallidos): las acciones legibles y la lista de archivos que no se
-    pudieron procesar (para no registrarlos en el manifiesto y que se
-    reintenten en la siguiente corrida).
+    - nuevos / modificados (contenido): se (re)ingestan con embeddings.
+    - eliminados: se borran sus fragmentos.
+    - modificados_fecha (solo cambió el timestamp, contenido idéntico):
+      se refresca la metadata de fecha SIN recalcular embeddings.
+
+    Un PDF corrupto o vacío no tumba la ejecución: cada documento se
+    procesa con manejo de errores. Devuelve (acciones, fallidos): las
+    acciones legibles y la lista de archivos que no se pudieron procesar
+    (para no registrarlos en el manifiesto y reintentarlos).
     """
     acciones = []
     fallidos = []
@@ -201,6 +226,15 @@ def aplicar_cambios(nuevos, modificados, eliminados):
             f"Indexado documento nuevo '{archivo}' ({len(chunks)} fragmentos)."
         )
 
+    for archivo in modificados_fecha:
+        mtime = Path(ruta_documento(archivo)).stat().st_mtime
+        n = refrescar_metadata_fecha(coleccion, archivo, mtime)
+        acciones.append(
+            f"'{archivo}': la fecha cambió pero el contenido es idéntico. Se "
+            f"actualizó la fecha en {n} fragmentos sin reindexar (sin costo de "
+            "API). Revisar si sigue siendo la versión oficial."
+        )
+
     return acciones, fallidos
 
 
@@ -224,11 +258,10 @@ def escribir_reporte(documentos, nuevos, modificados, eliminados, tocados,
         lineas.append("Base vectorial actualizada. Sin cambios detectados.")
     else:
         lineas.append("Cambios detectados:")
-        lineas.append(f"  Nuevos:      {nuevos or 'ninguno'}")
-        lineas.append(f"  Modificados: {modificados or 'ninguno'}")
-        lineas.append(f"  Eliminados:  {eliminados or 'ninguno'}")
-        lineas.append(f"  Tocados (fecha cambió, contenido igual): "
-                      f"{tocados or 'ninguno'}")
+        lineas.append(f"  Nuevos:                    {nuevos or 'ninguno'}")
+        lineas.append(f"  Modificados (contenido):   {modificados or 'ninguno'}")
+        lineas.append(f"  Modificados (solo fecha):  {tocados or 'ninguno'}")
+        lineas.append(f"  Eliminados:                {eliminados or 'ninguno'}")
         lineas.append("")
         lineas.append("Acciones tomadas:")
         for accion in acciones:
@@ -267,27 +300,18 @@ def main():
         return
 
     print("\nCambios detectados:")
-    print(f"  Nuevos:      {nuevos or 'ninguno'}")
-    print(f"  Modificados: {modificados or 'ninguno'}")
-    print(f"  Eliminados:  {eliminados or 'ninguno'}")
-    print(f"  Tocados (fecha cambió, contenido igual): {tocados or 'ninguno'}")
+    print(f"  Nuevos:                    {nuevos or 'ninguno'}")
+    print(f"  Modificados (contenido):   {modificados or 'ninguno'}")
+    print(f"  Modificados (solo fecha):  {tocados or 'ninguno'}")
+    print(f"  Eliminados:                {eliminados or 'ninguno'}")
 
-    acciones = []
-    fallidos = []
-    if nuevos or modificados or eliminados:
-        if not os.path.isdir(RUTA_CHROMA):
-            raise RuntimeError(
-                f"No existe la base vectorial '{RUTA_CHROMA}'. "
-                "Corre primero: python src/ingestor.py"
-            )
-        print("\nAplicando cambios en la base vectorial...")
-        acciones, fallidos = aplicar_cambios(nuevos, modificados, eliminados)
-
-    for archivo in tocados:
-        acciones.append(
-            f"'{archivo}': la fecha cambió pero el contenido es idéntico; "
-            "no se reindexa. Revisar si sigue siendo la versión oficial."
+    if not os.path.isdir(RUTA_CHROMA):
+        raise RuntimeError(
+            f"No existe la base vectorial '{RUTA_CHROMA}'. "
+            "Corre primero: python src/ingestor.py"
         )
+    print("\nAplicando cambios en la base vectorial...")
+    acciones, fallidos = aplicar_cambios(nuevos, modificados, eliminados, tocados)
 
     # Los documentos que fallaron no se registran en el manifiesto: así
     # se reintentan en la siguiente corrida en vez de darse por hechos.

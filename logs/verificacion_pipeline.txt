@@ -1,0 +1,35 @@
+REPORTE DE VERIFICACIÓN DEL PIPELINE DE ACTUALIZACIÓN
+=======================================================
+Fecha y hora: 2026-07-14 21:42:30
+
+VERIFICACIÓN 1 - DOCUMENTO NUEVO
+  [PASS] 1.1 Detección de archivo nuevo  (TEST_nuevo.pdf detectado e ingestado (232 chunks; base 1365->1597))
+  [PASS] 1.2 Disponibilidad en el agente  (RAG recuperó 5/10 chunks de TEST_nuevo.pdf)
+  [PASS] 1.3 Limpieza  (Eliminado; 0 chunks restantes; base de vuelta en 1365)
+
+VERIFICACIÓN 2 - DOCUMENTO MODIFICADO (touch)
+  [PASS] 2.1 Detección por timestamp  (LGRA detectado como Modificado (solo fecha))
+  [PASS] 2.2 Reingestión / metadata actualizada  (337/337 chunks con mtime_archivo = fecha nueva del archivo)
+  [PASS] 2.3 Sin duplicados  (Chunks LGRA = 337 antes y después; total 1365)
+
+VERIFICACIÓN 3 - DOCUMENTO ELIMINADO
+  [PASS] 3.1 Detección de eliminación  (Ley de Premios detectada como eliminada y reportada)
+  [PASS] 3.2 Limpieza de ChromaDB  (0 chunks restantes; RAG ya no recupera esa info; base 1183)
+  [PASS] 3.3 Restauración y resincronización  (Restaurada, reingestada (182 chunks); base 1365)
+
+PUNTUACIÓN TOTAL: 9/9
+
+CORRECCIONES APLICADAS
+-------------------------------------------------------
+Descubierta en la Prueba 2.2 (documento modificado por touch):
+el pipeline detectaba el cambio de fecha pero NO actualizaba los
+chunks, así que su metadata quedaba obsoleta.
+
+Corrección (src/actualizador.py y src/ingestor.py):
+1. Se agregó el metadato mtime_archivo a cada chunk (fecha del PDF).
+2. Ante un touch (fecha cambió, contenido idéntico), el actualizador
+   refresca mtime_archivo en los chunks vía update de ChromaDB, SIN
+   recalcular embeddings (cero costo de API) y sin duplicar. Se
+   reporta bajo "Modificados (solo fecha)".
+3. Un cambio real de contenido (hash distinto) sí dispara reingestión
+   completa, como antes.
