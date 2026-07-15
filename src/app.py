@@ -24,9 +24,8 @@ NOMBRE_COLECCION = "cgt_imss_bienestar"
 
 MENSAJE_BIENVENIDA = (
     "Hola, soy el Asistente Laboral de IMSS Bienestar, un agente de "
-    "inteligencia artificial (no una persona). Respondo con base en "
-    "las Condiciones Generales de Trabajo y su marco normativo. "
-    "¿En qué te puedo ayudar?"
+    "inteligencia artificial. Respondo con base en las Condiciones "
+    "Generales de Trabajo y su marco normativo. ¿En qué te puedo ayudar?"
 )
 
 MENSAJE_FUERA_DE_CONTEXTO = (
