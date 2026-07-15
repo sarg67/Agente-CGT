@@ -37,6 +37,12 @@ load_dotenv()
 
 RUTA_REPORTE = "logs/reporte_curaduria.txt"
 
+# Registro de fechas de modificación (mtime) por archivo. Es aparte del
+# manifiesto de hashes: permite detectar que un documento fue "tocado"
+# (re-guardado o reemplazado) aunque su contenido sea idéntico, algo
+# relevante para la curaduría (¿sigue siendo la versión oficial?).
+RUTA_MTIMES = "manifiesto_mtime.json"
+
 
 def leer_manifiesto():
     """Devuelve {archivo: hash} de la última ingesta, o {} si no existe."""
@@ -49,6 +55,41 @@ def leer_manifiesto():
 def escribir_manifiesto(hashes):
     with open(RUTA_MANIFIESTO, "w", encoding="utf-8") as f:
         json.dump(hashes, f, indent=2, ensure_ascii=False)
+
+
+def calcular_mtimes():
+    """Devuelve {archivo: fecha_de_modificación} de los PDFs actuales."""
+    mtimes = {}
+    for ruta in sorted(Path(RUTA_DOCUMENTOS).glob("*.pdf")):
+        mtimes[ruta.name] = ruta.stat().st_mtime
+    return mtimes
+
+
+def leer_mtimes():
+    if not os.path.exists(RUTA_MTIMES):
+        return {}
+    with open(RUTA_MTIMES, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def escribir_mtimes(mtimes):
+    with open(RUTA_MTIMES, "w", encoding="utf-8") as f:
+        json.dump(mtimes, f, indent=2, ensure_ascii=False)
+
+
+def detectar_tocados(hashes_act, hashes_prev, mtimes_act, mtimes_prev):
+    """Archivos cuya fecha cambió pero cuyo contenido es idéntico."""
+    tocados = []
+    for archivo in hashes_act:
+        mismo_contenido = (
+            archivo in hashes_prev and hashes_act[archivo] == hashes_prev[archivo]
+        )
+        fecha_cambio = (
+            archivo in mtimes_prev and mtimes_act.get(archivo) != mtimes_prev[archivo]
+        )
+        if mismo_contenido and fecha_cambio:
+            tocados.append(archivo)
+    return sorted(tocados)
 
 
 def listar_documentos():
@@ -111,37 +152,60 @@ def abrir_base():
 def aplicar_cambios(nuevos, modificados, eliminados):
     """Actualiza en ChromaDB solo los documentos afectados.
 
-    Devuelve una lista de acciones tomadas (texto legible).
+    Un PDF corrupto o vacío no debe tumbar toda la ejecución: cada
+    documento se procesa con manejo de errores. Devuelve (acciones,
+    fallidos): las acciones legibles y la lista de archivos que no se
+    pudieron procesar (para no registrarlos en el manifiesto y que se
+    reintenten en la siguiente corrida).
     """
     acciones = []
+    fallidos = []
     vectorstore = abrir_base()
     coleccion = vectorstore._collection
 
-    # Eliminar de la base los documentos borrados y las versiones viejas
-    # de los modificados (se borran por su ruta 'source').
+    # Eliminar de la base los documentos borrados (por su ruta 'source').
     for archivo in eliminados:
         coleccion.delete(where={"source": ruta_documento(archivo)})
         acciones.append(f"Eliminados de la base los fragmentos de '{archivo}'.")
 
     for archivo in modificados:
+        # Cargar ANTES de borrar: si el PDF nuevo falla, se conserva la
+        # versión anterior en lugar de dejar el documento sin fragmentos.
+        try:
+            chunks = cargar_chunks(archivo)
+        except Exception as error:
+            fallidos.append(archivo)
+            acciones.append(
+                f"ERROR al reindexar '{archivo}': {error}. "
+                "Se conserva la versión anterior."
+            )
+            continue
         coleccion.delete(where={"source": ruta_documento(archivo)})
-        chunks = cargar_chunks(archivo)
         agregar_por_lotes(vectorstore, chunks)
         acciones.append(
             f"Reindexado '{archivo}' ({len(chunks)} fragmentos) por modificación."
         )
 
     for archivo in nuevos:
-        chunks = cargar_chunks(archivo)
+        try:
+            chunks = cargar_chunks(archivo)
+        except Exception as error:
+            fallidos.append(archivo)
+            acciones.append(
+                f"ERROR al indexar documento nuevo '{archivo}': {error}. "
+                "Documento omitido (archivo inválido o vacío)."
+            )
+            continue
         agregar_por_lotes(vectorstore, chunks)
         acciones.append(
             f"Indexado documento nuevo '{archivo}' ({len(chunks)} fragmentos)."
         )
 
-    return acciones
+    return acciones, fallidos
 
 
-def escribir_reporte(documentos, nuevos, modificados, eliminados, acciones):
+def escribir_reporte(documentos, nuevos, modificados, eliminados, tocados,
+                     acciones):
     os.makedirs(os.path.dirname(RUTA_REPORTE), exist_ok=True)
     lineas = []
     lineas.append("REPORTE DE CURADURÍA DE DOCUMENTOS")
@@ -153,7 +217,7 @@ def escribir_reporte(documentos, nuevos, modificados, eliminados, acciones):
         lineas.append(f"  - {nombre} (modificado: {fecha_mod})")
     lineas.append("")
 
-    hay_cambios = nuevos or modificados or eliminados
+    hay_cambios = nuevos or modificados or eliminados or tocados
     if not hay_cambios:
         lineas.append("Cambios detectados: ninguno.")
         lineas.append("")
@@ -163,6 +227,8 @@ def escribir_reporte(documentos, nuevos, modificados, eliminados, acciones):
         lineas.append(f"  Nuevos:      {nuevos or 'ninguno'}")
         lineas.append(f"  Modificados: {modificados or 'ninguno'}")
         lineas.append(f"  Eliminados:  {eliminados or 'ninguno'}")
+        lineas.append(f"  Tocados (fecha cambió, contenido igual): "
+                      f"{tocados or 'ninguno'}")
         lineas.append("")
         lineas.append("Acciones tomadas:")
         for accion in acciones:
@@ -181,34 +247,60 @@ def main():
     documentos = listar_documentos()
     hashes_actuales = calcular_hashes(RUTA_DOCUMENTOS)
     hashes_previos = leer_manifiesto()
+    mtimes_actuales = calcular_mtimes()
+    mtimes_previos = leer_mtimes()
     nuevos, modificados, eliminados = detectar_cambios(
         hashes_actuales, hashes_previos
+    )
+    tocados = detectar_tocados(
+        hashes_actuales, hashes_previos, mtimes_actuales, mtimes_previos
     )
 
     print("Documentos revisados:")
     for nombre, fecha_mod in documentos:
         print(f"  - {nombre} (modificado: {fecha_mod})")
 
-    if not (nuevos or modificados or eliminados):
+    if not (nuevos or modificados or eliminados or tocados):
         print("\nBase vectorial actualizada. Sin cambios detectados.")
-        escribir_reporte(documentos, [], [], [], [])
+        escribir_reporte(documentos, [], [], [], [], [])
+        escribir_mtimes(mtimes_actuales)
         return
 
     print("\nCambios detectados:")
     print(f"  Nuevos:      {nuevos or 'ninguno'}")
     print(f"  Modificados: {modificados or 'ninguno'}")
     print(f"  Eliminados:  {eliminados or 'ninguno'}")
+    print(f"  Tocados (fecha cambió, contenido igual): {tocados or 'ninguno'}")
 
-    if not os.path.isdir(RUTA_CHROMA):
-        raise RuntimeError(
-            f"No existe la base vectorial '{RUTA_CHROMA}'. "
-            "Corre primero: python src/ingestor.py"
+    acciones = []
+    fallidos = []
+    if nuevos or modificados or eliminados:
+        if not os.path.isdir(RUTA_CHROMA):
+            raise RuntimeError(
+                f"No existe la base vectorial '{RUTA_CHROMA}'. "
+                "Corre primero: python src/ingestor.py"
+            )
+        print("\nAplicando cambios en la base vectorial...")
+        acciones, fallidos = aplicar_cambios(nuevos, modificados, eliminados)
+
+    for archivo in tocados:
+        acciones.append(
+            f"'{archivo}': la fecha cambió pero el contenido es idéntico; "
+            "no se reindexa. Revisar si sigue siendo la versión oficial."
         )
 
-    print("\nAplicando cambios en la base vectorial...")
-    acciones = aplicar_cambios(nuevos, modificados, eliminados)
-    escribir_manifiesto(hashes_actuales)
-    escribir_reporte(documentos, nuevos, modificados, eliminados, acciones)
+    # Los documentos que fallaron no se registran en el manifiesto: así
+    # se reintentan en la siguiente corrida en vez de darse por hechos.
+    manifiesto = {
+        archivo: hash_
+        for archivo, hash_ in hashes_actuales.items()
+        if archivo not in fallidos
+    }
+    escribir_manifiesto(manifiesto)
+    escribir_mtimes(mtimes_actuales)
+    escribir_reporte(
+        documentos, nuevos, modificados, eliminados, tocados, acciones
+    )
 
     print("\nAcciones tomadas:")
     for accion in acciones:

@@ -7,6 +7,7 @@ CLAUDE.md
 feedback.jsonl
 rechazos.jsonl
 manifiesto_ingesta.json
+manifiesto_mtime.json
 tests/
 
 # Logs de operación: los .jsonl y reportes regenerables NO se suben,

@@ -1,0 +1,45 @@
+REPORTE DE VERIFICACIÓN DE TAREAS DE MANTENIMIENTO
+=======================================================
+Fecha y hora: 2026-07-14 19:40:52
+
+TAREA 1 - Curaduría (src/actualizador.py)
+  [PASS] 1.1 Sin cambios  (Reporte coherente, sin errores)
+  [PASS] 1.2 Documento nuevo (PDF vacío/inválido)  (Corregido: ya no crashea; detecta el doc y lo omite)
+  [PASS] 1.3 Documento modificado (touch)  (Corregido: detecta cambio de fecha sin reindexar)
+
+TAREA 2A - Monitoreo en app (src/app.py)
+  [PASS] 2A.1 Registro respondida  (tipo=respondida, tiempo>0, campos completos)
+  [PASS] 2A.2 Registro safeguard  (tipo=safeguard)
+  [PASS] 2A.3 Registro verificacion  (tipo=verificacion)
+
+TAREA 2B - Reporte de calidad (src/reporte_calidad.py)
+  [PASS] 2B.1 Reporte con datos  (Muestra total, %, tiempo promedio)
+  [PASS] 2B.2 Consistencia con jsonl  (Total del reporte = líneas del archivo)
+  [PASS] 2B.3 jsonl vacío  (Manejado sin excepciones)
+
+TAREA 3 - Analizador de gaps (src/analizador_gaps.py)
+  [PASS] 3.1 Detección sin respuesta  (Las 3 preguntas aparecen en el reporte)
+  [PASS] 3.2 Agrupación por tema  (Preguntas de salario agrupadas juntas)
+  [PASS] 3.3 Sugerencias de documento  (Una sugerencia coherente por grupo)
+
+TAREA 4 - Evaluador de modelo (src/evaluador_modelo.py)
+  [PASS] 4.1 Ejecución completa  (10 preguntas evaluadas, reporte generado)
+  [PASS] 4.2 Validez del reporte  (PASS/FAIL x10, puntuación X/10, fallidas)
+  [PASS] 4.3 P10 safeguard  (P10 activa el safeguard en modo directo (10/10))
+
+TOTAL: 15/15 pruebas exitosas
+(El enunciado menciona 12; contando 2A y 2B por separado son 5
+ grupos x 3 = 15 pruebas.)
+
+CORRECCIONES APLICADAS DURANTE LA VERIFICACIÓN
+-------------------------------------------------------
+Todas en src/actualizador.py (Tarea 1):
+1. Manejo robusto de PDFs inválidos o vacíos: cada documento se
+   procesa con manejo de errores; un archivo corrupto ya no
+   tumba la ejecución (se reporta y se omite, sin registrarlo
+   en el manifiesto para reintentarlo). [descubierto en 1.2]
+2. Seguimiento de fecha de modificación (mtime): detecta
+   documentos "tocados" (fecha cambió, contenido idéntico) y lo
+   reporta sin reindexar ni gastar API. [descubierto en 1.3]
+
+Las tareas 2A, 2B, 3 y 4 pasaron sin necesidad de correcciones.

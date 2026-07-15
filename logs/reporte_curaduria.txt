@@ -1,11 +1,11 @@
 REPORTE DE CURADURÍA DE DOCUMENTOS
 ==================================================
-Fecha de ejecución: 2026-07-13 20:52:45
+Fecha de ejecución: 2026-07-14 06:38:28
 
 Documentos revisados:
   - CGT_IMSS_BIENESTAR.pdf (modificado: 2026-07-08 02:11:34)
   - LFTSE.pdf (modificado: 2026-07-08 03:57:18)
-  - LGRA.pdf (modificado: 2026-07-08 04:01:29)
+  - LGRA.pdf (modificado: 2026-07-14 06:37:02)
   - LISSSTE.pdf (modificado: 2026-07-08 04:01:13)
   - Ley_de_Premios_Estimulos_y_Recompensas_Civiles.pdf (modificado: 2026-07-08 04:00:17)
 
