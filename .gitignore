@@ -9,6 +9,7 @@ rechazos.jsonl
 manifiesto_ingesta.json
 manifiesto_mtime.json
 tests/
+HISTORIAL_SESIONES.md
 
 # Logs de operación: los .jsonl y reportes regenerables NO se suben,
 # pero sí la documentación del sistema (curaduría y gaps detectados).
