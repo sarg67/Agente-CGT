@@ -129,7 +129,9 @@ def cargar_cadena_rag():
         embedding_function=embeddings,
         persist_directory=RUTA_CHROMA,
     )
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 6})
+    # k=8: da margen para preguntas que combinan varios artículos o
+    # documentos (p. ej. aguinaldo en CGT Art. 41 y LFTSE Art. 42 Bis).
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 8})
 
     llm = ChatCohere(model="command-r-plus-08-2024", temperature=0)
 

@@ -48,7 +48,7 @@ la fuente. Proyecto desarrollado para el desafío de Alura.
   Cada fragmento conserva el documento de origen como metadato, lo que
   permite citar la fuente.
 - **Agente** (`src/app.py`): interfaz de chat en Streamlit con memoria
-  conversacional. Cada pregunta recupera los 6 fragmentos más
+  conversacional. Cada pregunta recupera los 8 fragmentos más
   relevantes y los pasa al LLM de Cohere (`command-r-plus-08-2024`)
   junto con el historial.
 - **Safeguard en capas**: el agente solo atiende temas laborales de
