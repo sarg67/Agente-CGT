@@ -119,6 +119,22 @@ INSTRUCCION_SIN_CONFIRMAR = (
     'prestaciones tengo?"): es laboral, así que pregunta primero.'
 )
 
+# Query expansion: reformula la pregunta a una consulta de búsqueda
+# concisa antes de recuperar. El relleno ("cuántos", "me corresponden")
+# y sobre todo el nombre de la institución diluyen la señal semántica y
+# hacen que preguntas verbosas no encuentren el artículo correcto.
+REFORMULAR_PROMPT = ChatPromptTemplate.from_template(
+    """Reformula la pregunta del usuario como una consulta de búsqueda
+breve (3 a 8 palabras) que conserve solo los términos clave del tema
+laboral. Quita el relleno (por ejemplo "cuántos", "me corresponden",
+"en un año") y NO incluyas nombres de instituciones (IMSS Bienestar,
+etc.), porque restan precisión a la búsqueda. Devuelve únicamente la
+consulta, sin comillas ni explicación.
+
+Pregunta: {question}
+Consulta:"""
+)
+
 
 @st.cache_resource
 def cargar_cadena_rag():
@@ -134,6 +150,9 @@ def cargar_cadena_rag():
     retriever = vectorstore.as_retriever(search_kwargs={"k": 8})
 
     llm = ChatCohere(model="command-r-plus-08-2024", temperature=0)
+
+    # Reformula la pregunta a una consulta de búsqueda antes de recuperar.
+    reformulador = REFORMULAR_PROMPT | llm | StrOutputParser()
 
     def formatear_contexto(docs):
         return "\n\n".join(
@@ -151,7 +170,9 @@ def cargar_cadena_rag():
 
     return (
         {
-            "context": itemgetter("question") | retriever | formatear_contexto,
+            # El contexto se recupera con la pregunta reformulada; la
+            # respuesta se genera con la pregunta original del usuario.
+            "context": reformulador | retriever | formatear_contexto,
             "question": itemgetter("question"),
             "historial": itemgetter("historial"),
             "instruccion_confirmacion": itemgetter("instruccion_confirmacion"),
