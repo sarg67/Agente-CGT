@@ -49,7 +49,7 @@ la fuente. Proyecto desarrollado para el desafío de Alura.
   permite citar la fuente.
 - **Agente** (`src/app.py`): interfaz de chat en Streamlit con memoria
   conversacional. Cada pregunta recupera los 8 fragmentos más
-  relevantes y los pasa al LLM de Cohere (`command-r-plus-08-2024`)
+  relevantes y los pasa al LLM de Cohere (`command-a-03-2025`)
   junto con el historial.
 - **Safeguard en capas**: el agente solo atiende temas laborales de
   IMSS Bienestar. Un filtro de palabras clave rechaza preguntas sobre

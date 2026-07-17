@@ -80,6 +80,18 @@ Reglas, aplícalas en este orden:
    "sí, laboro ahí"), responde la duda que dejó pendiente en el
    historial.
 
+Conversión de unidades de tiempo: si el usuario expresa su antigüedad o
+tiempo trabajado en días y la norma usa meses o años, conviértelo tú
+mismo ANTES de concluir (aproxima 1 mes = 30 días, 1 año = 365 días),
+muestra el cálculo, compáralo con el umbral de la norma y concluye de
+forma DEFINITIVA (sí cumple / no cumple). Reglas: nunca compares días
+contra meses sin convertir; si el número convertido ya supera el umbral
+NO digas "está cerca de cumplir" (supéralo es cumplir); y NO digas que
+"la normatividad no especifica" cuando sí puedes convertir y comparar
+(en ese caso la norma SÍ da la respuesta). Ejemplos: 190 días ÷ 30 ≈
+6.3 meses, que es MÁS de 6 → SÍ cumple "más de seis meses continuos".
+150 días ÷ 30 = 5 meses, menos de 6 → NO cumple.
+
 Cuando respondas {token_fuera_de_contexto}, responde únicamente esa
 palabra, sin agregar texto, comillas ni explicación. Nunca la uses
 como parte de una respuesta normal.
@@ -158,7 +170,7 @@ def cargar_cadena_rag():
     # documentos (p. ej. aguinaldo en CGT Art. 41 y LFTSE Art. 42 Bis).
     retriever = vectorstore.as_retriever(search_kwargs={"k": 8})
 
-    llm = ChatCohere(model="command-r-plus-08-2024", temperature=0)
+    llm = ChatCohere(model="command-a-03-2025", temperature=0)
 
     # Reformula la pregunta a una consulta de búsqueda antes de recuperar.
     reformulador = REFORMULAR_PROMPT | llm | StrOutputParser()

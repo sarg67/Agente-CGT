@@ -34,7 +34,7 @@ from app import (
 load_dotenv()
 
 # --- Configuración del modelo (cambiar aquí para comparar versiones) ---
-MODELO_LLM = "command-r-plus-08-2024"
+MODELO_LLM = "command-a-03-2025"
 MODELO_EMBEDDINGS = "embed-multilingual-v3.0"
 TEMPERATURA = 0
 TOP_K = 6
