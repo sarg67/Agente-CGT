@@ -144,13 +144,29 @@ INSTRUCCION_SIN_CONFIRMAR = (
 # concisa antes de recuperar. El relleno ("cuántos", "me corresponden")
 # y sobre todo el nombre de la institución diluyen la señal semántica y
 # hacen que preguntas verbosas no encuentren el artículo correcto.
+#
+# Recibe también el historial porque las preguntas de seguimiento no
+# traen tema propio: "¿qué dicen las CGT específicamente?" se
+# reformulaba como "CGT normas laborales" y recuperaba artículos al
+# azar. Con el historial hereda el tema de la pregunta anterior.
 REFORMULAR_PROMPT = ChatPromptTemplate.from_template(
     """Reformula la pregunta del usuario como una consulta de búsqueda
 breve (3 a 8 palabras) que conserve solo los términos clave del tema
 laboral. Quita el relleno (por ejemplo "cuántos", "me corresponden",
 "en un año") y NO incluyas nombres de instituciones (IMSS Bienestar,
-etc.), porque restan precisión a la búsqueda. Devuelve únicamente la
-consulta, sin comillas ni explicación.
+etc.), porque restan precisión a la búsqueda.
+
+IMPORTANTE — preguntas de seguimiento: si la pregunta no tiene tema
+propio y depende de lo hablado antes (por ejemplo "¿qué dicen las CGT
+específicamente?", "¿en qué artículo?", "¿y en ese caso?", "¿cuánto
+es?"), toma el tema de la última pregunta del usuario en el historial
+y construye la consulta con ESE tema. Ejemplo: si antes se preguntó
+por maternidad y ahora preguntan "¿qué dicen las CGT?", la consulta
+correcta es "maternidad descanso licencia", no "CGT normas". Nunca
+devuelvas una consulta sin tema laboral concreto.
+
+Historial de la conversación:
+{historial}
 
 Pregunta: {question}
 Consulta:"""
@@ -166,9 +182,12 @@ def cargar_cadena_rag():
         embedding_function=embeddings,
         persist_directory=RUTA_CHROMA,
     )
-    # k=8: da margen para preguntas que combinan varios artículos o
+    # k=10: da margen para preguntas que combinan varios artículos o
     # documentos (p. ej. aguinaldo en CGT Art. 41 y LFTSE Art. 42 Bis).
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 8})
+    # Se usa búsqueda por similitud a propósito: MMR con fetch_k probó
+    # perder fuentes relevantes (dejaba fuera la LFTSE), y fetch_k no
+    # es un parámetro válido para la búsqueda por similitud de Chroma.
+    retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
 
     llm = ChatCohere(model="command-a-03-2025", temperature=0)
 
