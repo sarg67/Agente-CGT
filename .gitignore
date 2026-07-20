@@ -13,6 +13,7 @@ HISTORIAL_SESIONES.md
 
 # Logs de operación: los .jsonl y reportes regenerables NO se suben,
 # pero sí la documentación del sistema (curaduría y gaps detectados).
+reintento_arm_sjc.log
 logs/*.jsonl
 logs/metricas*
 logs/evaluacion*

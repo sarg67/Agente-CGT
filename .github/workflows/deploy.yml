@@ -1,0 +1,27 @@
+name: Deploy en OCI
+
+# Cada push a main actualiza el código en la VM de Oracle Cloud
+# y reinicia el servicio de Streamlit.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Actualizar la VM por SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            cd ~/agente-cgt
+            git pull origin main
+            ./venv/bin/pip install -q -r requirements.txt
+            sudo systemctl restart agente-cgt
+            sleep 15
+            systemctl is-active agente-cgt
