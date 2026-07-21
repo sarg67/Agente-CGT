@@ -12,6 +12,8 @@ from operator import itemgetter
 
 import streamlit as st
 from dotenv import load_dotenv
+
+import monitor
 from langchain_chroma import Chroma
 from langchain_cohere import ChatCohere, CohereEmbeddings
 from langchain_core.output_parsers import StrOutputParser
@@ -349,6 +351,8 @@ def registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta):
     os.makedirs(os.path.dirname(ARCHIVO_METRICAS), exist_ok=True)
     with open(ARCHIVO_METRICAS, "a", encoding="utf-8") as f:
         f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    # Copia remota en el bucket de OCI (falla en silencio si no hay acceso).
+    monitor.subir_registro(registro)
     return metrica_id
 
 
