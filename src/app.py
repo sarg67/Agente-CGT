@@ -175,6 +175,25 @@ Consulta:"""
 )
 
 
+# Instituciones-empleador que, si quedan en la consulta de búsqueda,
+# hacen match con el encabezado repetido de cada página del CGT
+# ("... IMSS-BIENESTAR ...") y sepultan el artículo que sí responde la
+# pregunta. El prompt de reformulación ya pide no incluirlas, pero el LLM
+# es variable y a veces las deja; esto las quita de forma determinista.
+REGEX_RUIDO_CONSULTA = re.compile(
+    r"imss[\s-]*bienestar|\bimss\b|\bbienestar\b", re.IGNORECASE
+)
+
+
+def limpiar_consulta(consulta):
+    """Elimina de la consulta reformulada los nombres de la institución
+    empleadora (IMSS, Bienestar, IMSS-BIENESTAR) y normaliza espacios y
+    puntuación de los bordes. Si quedara vacía, devuelve la original."""
+    limpia = REGEX_RUIDO_CONSULTA.sub(" ", consulta)
+    limpia = re.sub(r"\s+", " ", limpia).strip(" .,-–")
+    return limpia or consulta
+
+
 @st.cache_resource
 def cargar_cadena_rag():
     embeddings = CohereEmbeddings(model="embed-multilingual-v3.0")
@@ -212,9 +231,15 @@ def cargar_cadena_rag():
 
     return (
         {
-            # El contexto se recupera con la pregunta reformulada; la
-            # respuesta se genera con la pregunta original del usuario.
-            "context": reformulador | retriever | formatear_contexto,
+            # El contexto se recupera con la pregunta reformulada y
+            # saneada (sin la institución); la respuesta se genera con la
+            # pregunta original del usuario.
+            "context": (
+                reformulador
+                | limpiar_consulta
+                | retriever
+                | formatear_contexto
+            ),
             "question": itemgetter("question"),
             "historial": itemgetter("historial"),
             "instruccion_confirmacion": itemgetter("instruccion_confirmacion"),

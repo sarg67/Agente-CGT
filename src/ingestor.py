@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from langchain_chroma import Chroma
 from langchain_cohere import CohereEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 load_dotenv()
@@ -23,6 +24,12 @@ RUTA_DOCUMENTOS = "documentos"
 RUTA_CHROMA = "chroma_db"
 NOMBRE_COLECCION = "cgt_imss_bienestar"
 
+# El CGT es un PDF escaneado con capa de texto de mala calidad. En su lugar
+# se ingesta su texto re-OCR-eado y limpio (ver src/reocr_cgt.py), un archivo
+# versionado para que la ingesta no necesite tesseract.
+STEM_CGT = "CGT_IMSS_BIENESTAR"
+RUTA_OCR_CGT = "documentos/CGT_IMSS_BIENESTAR.ocr.txt"
+
 # Manifiesto con la huella (hash) de cada PDF ingestado. Permite
 # detectar si los documentos cambiaron desde la última ingesta y
 # evitar reprocesar (y gastar API) cuando no hay cambios.
@@ -30,11 +37,18 @@ RUTA_MANIFIESTO = "manifiesto_ingesta.json"
 
 
 def calcular_hashes(ruta_documentos: str):
-    """Devuelve {nombre_de_archivo: hash} de los PDFs de la carpeta."""
+    """Devuelve {nombre_de_archivo: hash} de los PDFs de la carpeta.
+
+    Incluye también el texto re-OCR del CGT: como determina el índice, si
+    cambia debe dispararse un reindexado."""
     hashes = {}
     for ruta_pdf in sorted(Path(ruta_documentos).glob("*.pdf")):
         hashes[ruta_pdf.name] = hashlib.sha256(
             ruta_pdf.read_bytes()
+        ).hexdigest()
+    if os.path.exists(RUTA_OCR_CGT):
+        hashes[os.path.basename(RUTA_OCR_CGT)] = hashlib.sha256(
+            Path(RUTA_OCR_CGT).read_bytes()
         ).hexdigest()
     return hashes
 
@@ -81,8 +95,15 @@ def cargar_y_dividir_pdfs(ruta_documentos: str):
         fuente = NOMBRES_FUENTES.get(ruta_pdf.stem, ruta_pdf.stem)
         print(f"Cargando: {ruta_pdf.name}")
 
-        paginas = PyPDFLoader(str(ruta_pdf)).load()
-        chunks = splitter.split_documents(paginas)
+        if ruta_pdf.stem == STEM_CGT and os.path.exists(RUTA_OCR_CGT):
+            # PDF escaneado: se usa el texto re-OCR limpio en vez de la
+            # capa de texto original (mala calidad).
+            print(f"  (usando OCR limpio: {RUTA_OCR_CGT})")
+            texto = Path(RUTA_OCR_CGT).read_text(encoding="utf-8")
+            documentos_base = [Document(page_content=texto)]
+        else:
+            documentos_base = PyPDFLoader(str(ruta_pdf)).load()
+        chunks = splitter.split_documents(documentos_base)
         mtime = ruta_pdf.stat().st_mtime
         for chunk in chunks:
             chunk.metadata["fuente"] = fuente
