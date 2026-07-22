@@ -1,5 +1,5 @@
 """
-Evaluador de calidad del modelo.
+Evaluador de calidad del modelo + gestor de versiones.
 
 Corre la cadena RAG directamente (sin Streamlit) contra un conjunto fijo
 de 10 preguntas con criterios de evaluación, calcula PASS/FAIL por
@@ -7,12 +7,21 @@ pregunta y una puntuación total, y guarda el detalle en
 logs/evaluacion_modelo.txt.
 
 El modelo y sus parámetros están en variables al inicio para poder
-cambiarlos y comparar versiones fácilmente.
+cambiarlos y comparar versiones fácilmente. Además, cada corrida registra
+una fila en logs/versiones.jsonl con la versión del modelo, embeddings,
+prompt (hash), índice vectorial (hash), parámetros y puntuación, lo que
+permite comparar el rendimiento entre versiones.
 
-Uso: python src/evaluador_modelo.py
+Uso:
+  python src/evaluador_modelo.py               # evalúa y registra la versión
+  python src/evaluador_modelo.py --historial   # muestra y compara versiones
 """
 
+import argparse
+import hashlib
+import json
 import os
+import subprocess
 import unicodedata
 from datetime import datetime
 from operator import itemgetter
@@ -27,8 +36,10 @@ from app import (
     MENSAJE_FUERA_DE_CONTEXTO,
     NOMBRE_COLECCION,
     PROMPT,
+    REFORMULAR_PROMPT,
     RUTA_CHROMA,
     TOKEN_FUERA_DE_CONTEXTO,
+    limpiar_consulta,
 )
 
 load_dotenv()
@@ -40,6 +51,9 @@ TEMPERATURA = 0
 TOP_K = 6
 
 RUTA_EVALUACION = "logs/evaluacion_modelo.txt"
+# Historial de versiones evaluadas (una línea JSON por corrida), para
+# comparar el rendimiento entre versiones.
+RUTA_VERSIONES = "logs/versiones.jsonl"
 
 
 def normalizar(texto):
@@ -134,6 +148,10 @@ def construir_cadena():
     retriever = vectorstore.as_retriever(search_kwargs={"k": TOP_K})
     llm = ChatCohere(model=MODELO_LLM, temperature=TEMPERATURA)
 
+    # Mismo pipeline de recuperación que app.py: reformula la pregunta a una
+    # consulta de búsqueda y la sanea (quita la institución) antes de recuperar.
+    reformulador = REFORMULAR_PROMPT | llm | StrOutputParser()
+
     def formatear_contexto(docs):
         return "\n\n".join(
             f"[Fuente: {d.metadata.get('fuente', 'desconocida')}]\n{d.page_content}"
@@ -147,7 +165,9 @@ def construir_cadena():
 
     return (
         {
-            "context": itemgetter("question") | retriever | formatear_contexto,
+            "context": (
+                reformulador | limpiar_consulta | retriever | formatear_contexto
+            ),
             "question": itemgetter("question"),
             "historial": itemgetter("historial"),
             "instruccion_confirmacion": itemgetter("instruccion_confirmacion"),
@@ -218,13 +238,119 @@ def escribir_reporte(resultados):
     return aprobados, total
 
 
+# --- Gestor de versiones -------------------------------------------------
+
+def _hash_corto(texto):
+    return hashlib.sha256(texto.encode("utf-8")).hexdigest()[:12]
+
+
+def _commit_git():
+    """Commit actual (corto), o 'desconocido' si no es un repo git."""
+    try:
+        salida = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, check=True,
+        )
+        return salida.stdout.strip()
+    except Exception:
+        return "desconocido"
+
+
+def _hash_prompt():
+    """Huella de los prompts del pipeline (generación + reformulación de la
+    consulta), para detectar cambios de prompt entre versiones."""
+    try:
+        textos = (
+            PROMPT.messages[0].prompt.template
+            + REFORMULAR_PROMPT.messages[0].prompt.template
+        )
+        return _hash_corto(textos)
+    except Exception:
+        return _hash_corto(str(PROMPT) + str(REFORMULAR_PROMPT))
+
+
+def _hash_indice():
+    """Versión del índice vectorial = huella del manifiesto de ingesta,
+    que a su vez hashea los documentos y el texto OCR del CGT."""
+    try:
+        with open("manifiesto_ingesta.json", encoding="utf-8") as f:
+            return _hash_corto(f.read())
+    except Exception:
+        return "desconocido"
+
+
+def registrar_version(aprobados, total):
+    """Agrega una fila al historial de versiones con todo lo que define la
+    ejecución (modelo, embeddings, prompt, índice, parámetros y puntuación),
+    para poder comparar el rendimiento entre versiones."""
+    registro = {
+        "fecha": datetime.now().isoformat(timespec="seconds"),
+        "commit": _commit_git(),
+        "modelo_llm": MODELO_LLM,
+        "modelo_embeddings": MODELO_EMBEDDINGS,
+        "temperatura": TEMPERATURA,
+        "k": TOP_K,
+        "hash_prompt": _hash_prompt(),
+        "hash_indice": _hash_indice(),
+        "aprobados": aprobados,
+        "total": total,
+        "puntuacion": f"{aprobados}/{total}",
+    }
+    os.makedirs(os.path.dirname(RUTA_VERSIONES), exist_ok=True)
+    with open(RUTA_VERSIONES, "a", encoding="utf-8") as f:
+        f.write(json.dumps(registro, ensure_ascii=False) + "\n")
+    return registro
+
+
+def mostrar_historial():
+    """Imprime el historial de versiones evaluadas, para comparar el
+    rendimiento entre ellas."""
+    if not os.path.exists(RUTA_VERSIONES):
+        print("Aún no hay versiones registradas. Corre el evaluador primero.")
+        return
+    with open(RUTA_VERSIONES, encoding="utf-8") as f:
+        filas = [json.loads(linea) for linea in f if linea.strip()]
+
+    print("HISTORIAL DE VERSIONES (comparación de rendimiento)")
+    print("=" * 92)
+    print(f"{'fecha':19}  {'commit':10}  {'modelo LLM':22}  {'tmp':3}  "
+          f"{'k':2}  {'prompt':12}  {'indice':12}  {'punt':5}")
+    print("-" * 92)
+    for r in filas:
+        print(f"{r['fecha']:19}  {r.get('commit', ''):10}  "
+              f"{r['modelo_llm']:22}  {str(r['temperatura']):3}  "
+              f"{str(r['k']):2}  {r.get('hash_prompt', ''):12}  "
+              f"{r.get('hash_indice', ''):12}  {r['puntuacion']:5}")
+
+
 def main():
+    parser = argparse.ArgumentParser(
+        description="Evaluador de calidad del modelo y gestor de versiones."
+    )
+    parser.add_argument(
+        "--historial",
+        action="store_true",
+        help="Muestra y compara el historial de versiones y sale "
+        "(no vuelve a evaluar).",
+    )
+    args = parser.parse_args()
+
+    if args.historial:
+        mostrar_historial()
+        return
+
     if not os.getenv("COHERE_API_KEY"):
         raise RuntimeError("Falta COHERE_API_KEY en el archivo .env.")
     resultados = evaluar()
     aprobados, total = escribir_reporte(resultados)
+    registro = registrar_version(aprobados, total)
     print(f"\nPuntuación total: {aprobados}/{total}")
     print(f"Reporte guardado en {RUTA_EVALUACION}")
+    print(
+        f"Versión registrada en {RUTA_VERSIONES} "
+        f"(commit {registro['commit']}, prompt {registro['hash_prompt']}, "
+        f"índice {registro['hash_indice']})"
+    )
 
 
 if __name__ == "__main__":

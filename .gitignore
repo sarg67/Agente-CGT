@@ -12,8 +12,10 @@ tests/
 HISTORIAL_SESIONES.md
 
 # Logs de operación: los .jsonl y reportes regenerables NO se suben,
-# pero sí la documentación del sistema (curaduría y gaps detectados).
+# pero sí la documentación del sistema (curaduría y gaps detectados) y el
+# historial de versiones (evidencia del sistema de versionado).
 reintento_arm_sjc.log
 logs/*.jsonl
 logs/metricas*
 logs/evaluacion*
+!logs/versiones.jsonl
