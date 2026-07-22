@@ -1,10 +1,17 @@
 # Agente CGT — IMSS Bienestar
 
+![Agente CGT IMSS Bienestar](assets/captura_bienvenida.png)
+
 Agente de inteligencia artificial que responde preguntas sobre las
 **Condiciones Generales de Trabajo (CGT) de IMSS Bienestar** y su marco
 normativo, usando la técnica RAG (Retrieval-Augmented Generation):
 las respuestas se basan únicamente en los documentos oficiales y citan
 la fuente. Proyecto desarrollado para el desafío de Alura.
+
+![Estado](https://img.shields.io/badge/estado-en%20producción-brightgreen)
+![Python](https://img.shields.io/badge/python-3.10%2B-blue)
+![Cohere](https://img.shields.io/badge/LLM-Cohere-purple)
+![OCI Deploy](https://img.shields.io/badge/deploy-OCI-red)
 
 ## Documentos que consulta
 
@@ -58,6 +65,33 @@ la fuente. Proyecto desarrollado para el desafío de Alura.
   pregunta no aclara la institución, el agente pregunta primero
   "¿Laboras en IMSS Bienestar?" y recuerda la respuesta el resto de
   la conversación.
+
+## Módulos de mantenimiento
+
+Además del agente, el proyecto incluye 5 módulos para mantenerlo
+funcionando y mejorarlo con el tiempo:
+
+- **Pipeline de actualización de documentos** (`src/actualizador.py`):
+  detecta automáticamente documentos nuevos, modificados o eliminados en
+  `documentos/` (comparando huellas contra el manifiesto) y reingesta
+  SOLO los documentos afectados en ChromaDB, sin reprocesar el resto.
+- **Curaduría de contenido** (`src/actualizador.py`): compara las
+  versiones actuales de los PDFs contra lo indexado y genera un reporte
+  de sincronización (`logs/reporte_curaduria.txt`) para revisión humana.
+- **Monitoreo de calidad** (`src/monitor.py` + `src/reporte_calidad.py`):
+  cada pregunta queda registrada en `logs/metricas.jsonl` (con
+  trazabilidad completa: pregunta, respuesta, documentos usados, tipo de
+  respuesta, tiempo y calificación 👍/👎) y se sincroniza con OCI Object
+  Storage; `reporte_calidad.py` genera un resumen con % de preguntas
+  respondidas vs. bloqueadas, tiempo promedio y feedback negativo.
+- **Ciclo de mejora** (`src/analizador_gaps.py`): lee las métricas,
+  agrupa por tema las preguntas que el agente no pudo responder y
+  sugiere qué tipo de documento cubriría cada vacío
+  (`logs/gaps_detectados.txt`).
+- **Evaluador de modelo** (`src/evaluador_modelo.py`): corre la cadena
+  RAG directamente (sin Streamlit) contra 10 preguntas fijas con
+  criterios definidos, calcula PASS/FAIL y una puntuación total —
+  útil para comparar versiones del modelo o de sus parámetros.
 
 ## Ejemplos de preguntas y respuestas
 
@@ -142,19 +176,59 @@ sin duplicados. Para automatizarlo como rutina periódica, se puede
 programar ese comando con `cron` en el servidor (ver sección de
 deploy).
 
+## Dashboard de monitoreo
+
+Además del chat, hay un dashboard de Streamlit (`src/dashboard.py`) que
+visualiza las métricas de uso registradas en `logs/metricas.jsonl`
+(latencia, preguntas respondidas vs. bloqueadas, feedback, preguntas
+recientes con su respuesta y documentos usados). Corre en un puerto
+separado del agente, para no interferir con él:
+
+```bash
+streamlit run src/dashboard.py --server.port 8502
+```
+
 ## Deploy en OCI
 
-*(Pendiente: captura de pantalla y URL del deploy en Oracle Cloud
-Infrastructure.)*
+El agente está desplegado en producción en Oracle Cloud Infrastructure:
+
+**URL pública:** http://163.192.62.143:8501
+
+| Respuesta con cita de fuente | Safeguard (tema ajeno) |
+|---|---|
+| ![Respuesta real](assets/captura_respuesta.png) | ![Safeguard](assets/captura_safeguard.png) |
+
+**Servicios de OCI usados:**
+
+- **OCI Compute** (VM Always Free, `E2.1.Micro`): corre la app de
+  Streamlit como servicio systemd.
+- **OCI Object Storage**: almacena los logs de métricas
+  (`logs/metricas.jsonl`) como respaldo en la nube.
+- **OCI Vault**: guarda de forma segura la API key de Cohere.
+- **GitHub Actions (CI/CD)**: despliega automáticamente a la VM con
+  cada push a `main`.
 
 ## Estructura del proyecto
 
 ```
 ├── documentos/          # PDFs fuente (CGT + 4 leyes)
+├── assets/              # Capturas usadas en este README
 ├── src/
-│   ├── ingestor.py      # Ingesta: PDFs → chunks → ChromaDB
-│   └── app.py           # Agente: chat Streamlit + RAG + safeguard
+│   ├── ingestor.py         # Ingesta: PDFs → chunks → ChromaDB
+│   ├── reocr_cgt.py        # Re-OCR en español del CGT (PDF escaneado)
+│   ├── app.py              # Agente: chat Streamlit + RAG + safeguard
+│   ├── actualizador.py     # Pipeline de actualización y curaduría
+│   ├── monitor.py          # Sincroniza logs/metricas.jsonl con OCI
+│   ├── reporte_calidad.py  # Reporte de calidad y uso (CLI)
+│   ├── analizador_gaps.py  # Ciclo de mejora: vacíos de conocimiento
+│   ├── evaluador_modelo.py # Evaluador de modelo (10 preguntas fijas)
+│   └── dashboard.py        # Dashboard de monitoreo (Streamlit, :8502)
 ├── requirements.txt
 ├── .env.example         # Plantilla de variables de entorno
 └── chroma_db/           # Base vectorial (se genera con el ingestor)
 ```
+
+## Autor
+
+- GitHub: [sarg67](https://github.com/sarg67)
+- Proyecto desarrollado para el Challenge Alura + Oracle.
