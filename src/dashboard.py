@@ -160,16 +160,22 @@ else:
 # ---------------------------------------------------------------------------
 
 st.subheader("Preguntas recientes")
-tabla = inter_f.sort_values("timestamp", ascending=False)[
-    ["timestamp", "pregunta", "tipo_respuesta", "calificacion", "tiempo_respuesta"]
-].head(50).copy()
+columnas = ["timestamp", "pregunta", "tipo_respuesta", "respuesta",
+            "documentos_usados", "calificacion", "tiempo_respuesta"]
+tabla = inter_f.reindex(columns=columnas).sort_values(
+    "timestamp", ascending=False).head(50).copy()
 tabla["calificacion"] = tabla["calificacion"].map(
     {"positivo": "👍", "negativo": "👎"}).fillna("—")
+tabla["documentos_usados"] = tabla["documentos_usados"].apply(
+    lambda v: ", ".join(v) if isinstance(v, list) and v else "—")
+tabla["respuesta"] = tabla["respuesta"].fillna("—")
 tabla["timestamp"] = tabla["timestamp"].dt.strftime("%Y-%m-%d %H:%M")
 tabla = tabla.rename(columns={
     "timestamp": "Fecha",
     "pregunta": "Pregunta",
     "tipo_respuesta": "Tipo",
+    "respuesta": "Respuesta",
+    "documentos_usados": "Documentos usados",
     "calificacion": "Calificación",
     "tiempo_respuesta": "Tiempo (s)",
 })

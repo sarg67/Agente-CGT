@@ -18,6 +18,7 @@ from langchain_chroma import Chroma
 from langchain_cohere import ChatCohere, CohereEmbeddings
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.runnables import RunnablePassthrough
 
 load_dotenv()
 
@@ -229,17 +230,13 @@ def cargar_cadena_rag():
             return MENSAJE_FUERA_DE_CONTEXTO
         return texto
 
-    return (
+    def recuperar_docs(entrada):
+        consulta = limpiar_consulta(reformulador.invoke(entrada))
+        return retriever.invoke(consulta)
+
+    generar_respuesta = (
         {
-            # El contexto se recupera con la pregunta reformulada y
-            # saneada (sin la institución); la respuesta se genera con la
-            # pregunta original del usuario.
-            "context": (
-                reformulador
-                | limpiar_consulta
-                | retriever
-                | formatear_contexto
-            ),
+            "context": lambda x: formatear_contexto(x["docs"]),
             "question": itemgetter("question"),
             "historial": itemgetter("historial"),
             "instruccion_confirmacion": itemgetter("instruccion_confirmacion"),
@@ -248,6 +245,12 @@ def cargar_cadena_rag():
         | llm
         | StrOutputParser()
         | normalizar_fuera_de_contexto
+    )
+
+    # Se expone "docs" junto con la respuesta (en vez de devolver solo el
+    # texto) para poder registrar qué documentos se usaron en cada consulta.
+    return RunnablePassthrough.assign(docs=recuperar_docs) | RunnablePassthrough.assign(
+        respuesta=generar_respuesta
     )
 
 
@@ -356,7 +359,8 @@ if st.button("Nueva conversación"):
 ARCHIVO_METRICAS = "logs/metricas.jsonl"
 
 
-def registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta):
+def registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta, respuesta,
+                       documentos_usados, pregunta_pendiente=None):
     """Escribe una línea en metricas.jsonl y devuelve su id, para que el
     voto posterior pueda actualizar ese mismo registro."""
     st.session_state.metrica_contador = (
@@ -372,6 +376,11 @@ def registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta):
         "tipo_respuesta": tipo_respuesta,  # respondida / safeguard / verificacion
         "tiempo_respuesta": round(tiempo_respuesta, 3),
         "calificacion": None,  # se llena con el voto 👍/👎
+        "respuesta": respuesta,
+        "documentos_usados": documentos_usados,
+        # Solo se llena cuando tipo_respuesta es "verificacion": la
+        # pregunta que quedó pendiente hasta confirmar la institución.
+        "pregunta_pendiente": pregunta_pendiente,
     }
     os.makedirs(os.path.dirname(ARCHIVO_METRICAS), exist_ok=True)
     with open(ARCHIVO_METRICAS, "a", encoding="utf-8") as f:
@@ -447,6 +456,7 @@ if pregunta:
     st.session_state.pregunta_pendiente = None
 
     inicio = time.perf_counter()
+    docs = []
     if menciona_otra_institucion(pregunta):
         respuesta = MENSAJE_FUERA_DE_CONTEXTO
     elif st.session_state.confirmado is False:
@@ -459,7 +469,7 @@ if pregunta:
                 if st.session_state.confirmado
                 else INSTRUCCION_SIN_CONFIRMAR
             )
-            respuesta = cadena.invoke(
+            resultado = cadena.invoke(
                 {
                     # Tras confirmar, se responde la pregunta original
                     # sin pedirle a la persona que la repita.
@@ -468,6 +478,8 @@ if pregunta:
                     "instruccion_confirmacion": instruccion,
                 }
             )
+            respuesta = resultado["respuesta"]
+            docs = resultado["docs"]
         if respuesta == PREGUNTA_CONFIRMACION:
             st.session_state.pregunta_pendiente = pregunta
     tiempo_respuesta = time.perf_counter() - inicio
@@ -479,7 +491,22 @@ if pregunta:
         tipo_respuesta = "verificacion"
     else:
         tipo_respuesta = "respondida"
-    metrica_id = registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta)
+
+    # Fuentes de los documentos recuperados para esta consulta (sin
+    # duplicados, en el orden en que el retriever los devolvió).
+    documentos_usados = []
+    for doc in docs:
+        fuente = doc.metadata.get("fuente", "desconocida")
+        if fuente not in documentos_usados:
+            documentos_usados.append(fuente)
+
+    pregunta_pendiente_registro = (
+        pregunta if tipo_respuesta == "verificacion" else None
+    )
+    metrica_id = registrar_metrica(
+        pregunta, tipo_respuesta, tiempo_respuesta, respuesta,
+        documentos_usados, pregunta_pendiente_registro,
+    )
 
     st.session_state.mensajes.append({"rol": "user", "contenido": pregunta})
     st.session_state.mensajes.append(
