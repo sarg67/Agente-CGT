@@ -377,7 +377,7 @@ def registrar_metrica(pregunta, tipo_respuesta, tiempo_respuesta):
     with open(ARCHIVO_METRICAS, "a", encoding="utf-8") as f:
         f.write(json.dumps(registro, ensure_ascii=False) + "\n")
     # Copia remota en el bucket de OCI (falla en silencio si no hay acceso).
-    monitor.subir_registro(registro)
+    monitor.subir_metricas()
     return metrica_id
 
 
@@ -397,6 +397,8 @@ def actualizar_calificacion(metrica_id, calificacion):
     with open(ARCHIVO_METRICAS, "w", encoding="utf-8") as f:
         for reg in registros:
             f.write(json.dumps(reg, ensure_ascii=False) + "\n")
+    # Sincronizar la copia remota para que incluya la calificación.
+    monitor.subir_metricas()
 
 
 def registrar_feedback(indice):

@@ -6,9 +6,12 @@ total de preguntas, proporción respondidas vs bloqueadas por safeguard,
 tiempo promedio de respuesta, preguntas sin respuesta más frecuentes y
 preguntas con calificación negativa.
 
-Uso: python src/reporte_calidad.py
+Uso:
+  python src/reporte_calidad.py                 # lee el archivo local
+  python src/reporte_calidad.py --fuente nube    # lee desde OCI Object Storage
 """
 
+import argparse
 import json
 import os
 from collections import Counter
@@ -16,11 +19,23 @@ from collections import Counter
 ARCHIVO_METRICAS = "logs/metricas.jsonl"
 
 
+def _parsear_jsonl(texto):
+    return [json.loads(linea) for linea in texto.splitlines() if linea.strip()]
+
+
 def cargar_metricas(ruta=ARCHIVO_METRICAS):
+    """Lee las métricas del archivo local."""
     if not os.path.exists(ruta):
         return []
     with open(ruta, encoding="utf-8") as f:
-        return [json.loads(linea) for linea in f if linea.strip()]
+        return _parsear_jsonl(f.read())
+
+
+def cargar_metricas_nube():
+    """Lee las métricas del objeto metricas.jsonl en OCI Object Storage."""
+    import monitor
+
+    return _parsear_jsonl(monitor.descargar_metricas())
 
 
 def porcentaje(parte, total):
@@ -79,7 +94,28 @@ def generar_reporte(metricas):
 
 
 def main():
-    generar_reporte(cargar_metricas())
+    parser = argparse.ArgumentParser(
+        description="Reporte de calidad y métricas de uso del agente."
+    )
+    parser.add_argument(
+        "--fuente",
+        choices=["local", "nube"],
+        default="local",
+        help="De dónde leer las métricas: 'local' (archivo, por defecto) "
+        "o 'nube' (OCI Object Storage).",
+    )
+    args = parser.parse_args()
+
+    if args.fuente == "nube":
+        try:
+            metricas = cargar_metricas_nube()
+        except Exception as e:
+            print(f"No se pudieron leer las métricas desde la nube: {e}")
+            return
+    else:
+        metricas = cargar_metricas()
+
+    generar_reporte(metricas)
 
 
 if __name__ == "__main__":
